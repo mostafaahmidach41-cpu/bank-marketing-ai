@@ -1,54 +1,66 @@
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import pandas as pd
-from sklearn.model_selection import train_test_split
+import numpy as np
 from sklearn.preprocessing import StandardScaler
+import joblib
 
-class BankModel(nn.Module):
-    def __init__(self):
-        super(BankModel, self).__init__()
-        self.fc1 = nn.Linear(3, 16)
-        self.fc2 = nn.Linear(16, 8)
-        self.fc3 = nn.Linear(8, 1)
-        self.sigmoid = nn.Sigmoid()
+np.random.seed(42)
 
-    def forward(self, x):
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        x = self.sigmoid(self.fc3(x))
-        return x
+rows = 1000
+age = np.random.randint(18, 80, rows)
+balance = np.random.randint(0, 120000, rows)
+duration = np.random.randint(10, 4000, rows)
 
-# Logic to create balanced training data
-data = {
-    'age': [25, 60, 30, 65, 40, 70, 20, 55, 35, 80],
-    'balance': [500, 50000, 1000, 30000, 2000, 80000, 100, 25000, 1500, 100000],
-    'duration': [50, 2000, 100, 1500, 200, 3000, 30, 1200, 150, 4000],
-    'y': [0, 1, 0, 1, 0, 1, 0, 1, 0, 1]  # 0 = NO, 1 = YES
-}
+y = (
+    (age > 45).astype(int) +
+    (balance > 30000).astype(int) +
+    (duration > 800).astype(int)
+)
+y = (y >= 2).astype(int)
 
-df = pd.DataFrame(data)
-X = df[['age', 'balance', 'duration']].values
-y = df['y'].values.reshape(-1, 1)
+df = pd.DataFrame({
+    "age": age,
+    "balance": balance,
+    "duration": duration,
+    "y": y
+})
 
-# Normalizing the data
+X = df[["age", "balance", "duration"]].values
+y = df["y"].values.reshape(-1, 1)
+
 scaler = StandardScaler()
 X = scaler.fit_transform(X)
+
+joblib.dump(scaler, "scaler.save")
 
 X_tensor = torch.tensor(X, dtype=torch.float32)
 y_tensor = torch.tensor(y, dtype=torch.float32)
 
+class BankModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(3, 16)
+        self.fc2 = nn.Linear(16, 8)
+        self.fc3 = nn.Linear(8, 1)
+
+    def forward(self, x):
+        x = torch.relu(self.fc1(x))
+        x = torch.relu(self.fc2(x))
+        return torch.sigmoid(self.fc3(x))
+
 model = BankModel()
 criterion = nn.BCELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.01)
+optimizer = optim.Adam(model.parameters(), lr=0.003)
 
-# Training Loop
-for epoch in range(500):
+for epoch in range(200):
     optimizer.zero_grad()
-    outputs = model(X_tensor)
-    loss = criterion(outputs, y_tensor)
+    output = model(X_tensor)
+    loss = criterion(output, y_tensor)
     loss.backward()
     optimizer.step()
 
-torch.save(model.state_dict(), 'marketing_model.pth')
-print("Model retrained and saved successfully!")
+torch.save(model.state_dict(), "marketing_model.pth")
+print("Model trained successfully")
