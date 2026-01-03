@@ -1,8 +1,11 @@
 import streamlit as st
 import torch
 import torch.nn as nn
+import numpy as np
+import joblib
 import os
 
+# Model architecture (MUST match train.py exactly)
 class BankModel(nn.Module):
     def __init__(self):
         super(BankModel, self).__init__()
@@ -17,40 +20,37 @@ class BankModel(nn.Module):
         x = self.sigmoid(self.fc3(x))
         return x
 
-st.title("AI Bank Marketing Prediction")
+# Load model
+model = BankModel()
+model.load_state_dict(torch.load("marketing_model.pth", map_location="cpu"))
+model.eval()
 
-@st.cache_resource
-def load_model():
-    model = BankModel()
-    if os.path.exists('marketing_model.pth'):
-        model.load_state_dict(torch.load('marketing_model.pth'))
-    model.eval()
-    return model
+# Load scaler
+scaler = joblib.load("scaler.pkl")
 
-model = load_model()
+# UI
+st.set_page_config(page_title="Bank Marketing AI", layout="centered")
+st.title("Bank Marketing Prediction System")
 
-# Inputs
-age = st.number_input("Age", value=60)
-balance = st.number_input("Balance", value=30000.0)
-duration = st.number_input("Duration", value=2000.0)
+age = st.number_input("Age", min_value=18, max_value=95, value=60)
+balance = st.number_input("Balance", min_value=0.0, max_value=200000.0, value=30000.0)
+duration = st.number_input("Duration", min_value=0.0, max_value=5000.0, value=2000.0)
 
 if st.button("Predict"):
-    # Fix: Normalization logic to match your train.py (StandardScaler approx)
-    # This converts raw numbers into the small values the AI understands
-    n_age = (age - 46.0) / 18.0
-    n_balance = (balance - 29010.0) / 33000.0
-    n_duration = (duration - 1423.0) / 1300.0
-    
-    input_tensor = torch.tensor([[n_age, n_balance, n_duration]], dtype=torch.float32)
-    
+    # Prepare input
+    input_array = np.array([[age, balance, duration]])
+    input_scaled = scaler.transform(input_array)
+    input_tensor = torch.tensor(input_scaled, dtype=torch.float32)
+
     with torch.no_grad():
-        prediction = model(input_tensor).item()
-    
-    # Real logical threshold
-    result = "YES" if prediction > 0.4 else "NO"
-    
-    st.subheader("Result")
+        prob = model(input_tensor).item()
+
+    result = "YES" if prob >= 0.5 else "NO"
+    confidence = prob if result == "YES" else 1 - prob
+
     color = "green" if result == "YES" else "red"
-    st.markdown(f"<h1 style='color: {color};'>{result}</h1>", unsafe_allow_html=True)
-    st.write(f"Confidence Level: {prediction:.4f}")
-    st.success("Prediction completed using the new retrained model.")
+
+    st.markdown(f"<h1 style='color:{color}; text-align:center;'>{result}</h1>", unsafe_allow_html=True)
+    st.metric("Confidence", f"{confidence:.4f}")
+    st.success("Prediction completed successfully.")
+
