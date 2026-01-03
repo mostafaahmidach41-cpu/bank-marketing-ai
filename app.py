@@ -5,52 +5,53 @@ import numpy as np
 import joblib
 import os
 
-# Model architecture (MUST match train.py exactly)
 class BankModel(nn.Module):
     def __init__(self):
-        super(BankModel, self).__init__()
+        super().__init__()
         self.fc1 = nn.Linear(3, 16)
         self.fc2 = nn.Linear(16, 8)
         self.fc3 = nn.Linear(8, 1)
-        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
-        x = self.sigmoid(self.fc3(x))
-        return x
+        return torch.sigmoid(self.fc3(x))
 
-# Load model
-model = BankModel()
-model.load_state_dict(torch.load("marketing_model.pth", map_location="cpu"))
-model.eval()
+@st.cache_resource
+def load_model():
+    model = BankModel()
+    model.load_state_dict(torch.load("marketing_model.pth", map_location="cpu"))
+    model.eval()
+    return model
 
-# Load scaler
-scaler = joblib.load("scaler.pkl")
+@st.cache_resource
+def load_scaler():
+    return joblib.load("scaler.save")
 
-# UI
-st.set_page_config(page_title="Bank Marketing AI", layout="centered")
-st.title("Bank Marketing Prediction System")
+model = load_model()
+scaler = load_scaler()
 
-age = st.number_input("Age", min_value=18, max_value=95, value=60)
-balance = st.number_input("Balance", min_value=0.0, max_value=200000.0, value=30000.0)
-duration = st.number_input("Duration", min_value=0.0, max_value=5000.0, value=2000.0)
+st.set_page_config(page_title="Bank AI", layout="centered")
+st.title("Bank Marketing AI")
+
+age = st.number_input("Age", min_value=18, max_value=100, value=40)
+balance = st.number_input("Balance", min_value=0.0, max_value=200000.0, value=20000.0)
+duration = st.number_input("Duration", min_value=1.0, max_value=5000.0, value=500.0)
 
 if st.button("Predict"):
-    # Prepare input
-    input_array = np.array([[age, balance, duration]])
-    input_scaled = scaler.transform(input_array)
-    input_tensor = torch.tensor(input_scaled, dtype=torch.float32)
+    raw = np.array([[age, balance, duration]])
+    scaled = scaler.transform(raw)
+    tensor = torch.tensor(scaled, dtype=torch.float32)
 
     with torch.no_grad():
-        prob = model(input_tensor).item()
+        score = model(tensor).item()
 
-    result = "YES" if prob >= 0.5 else "NO"
-    confidence = prob if result == "YES" else 1 - prob
+    result = "YES" if score >= 0.5 else "NO"
 
-    color = "green" if result == "YES" else "red"
-
-    st.markdown(f"<h1 style='color:{color}; text-align:center;'>{result}</h1>", unsafe_allow_html=True)
-    st.metric("Confidence", f"{confidence:.4f}")
-    st.success("Prediction completed successfully.")
+    st.subheader("Result")
+    st.markdown(
+        f"<h1 style='color:{'green' if result=='YES' else 'red'}'>{result}</h1>",
+        unsafe_allow_html=True
+    )
+    st.metric("Confidence", f"{score:.4f}")
 
