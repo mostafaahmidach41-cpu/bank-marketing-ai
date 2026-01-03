@@ -1,96 +1,89 @@
-import streamlit as st
+  import streamlit as st
 import torch
 import torch.nn as nn
-import os
-import re
 import pandas as pd
-from datetime import datetime
+import io
+import plotly.express as px
 
-class BankModel(nn.Module):
+class MarketingModel(nn.Module):
     def __init__(self):
-        super(BankModel, self).__init__()
-        self.layer1 = nn.Linear(3, 8)
-        self.layer2 = nn.Linear(8, 1)
-        self.sigmoid = nn.Sigmoid()
-
+        super(MarketingModel, self).__init__()
+        self.fc = nn.Sequential(
+            nn.Linear(3, 16),
+            nn.ReLU(),
+            nn.Linear(16, 8),
+            nn.ReLU(),
+            nn.Linear(8, 1),
+            nn.Sigmoid()
+        )
     def forward(self, x):
-        x = torch.relu(self.layer1(x))
-        x = self.sigmoid(self.layer2(x))
-        return x
+        return self.fc(x)
 
-st.set_page_config(page_title="Bank AI SaaS", layout="centered")
+def load_model():
+    model = MarketingModel()
+    model.load_state_dict(torch.load('marketing_model.pth'))
+    model.eval()
+    return model
 
-def is_valid_gmail(email):
-    pattern = r'^[a-z0-9](\.?[a-z0-9]){5,}@gmail\.com$'
-    return re.match(pattern, email)
+st.set_page_config(page_title="Bank AI SaaS", layout="wide")
 
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
+if 'predictions' not in st.session_state:
+    st.session_state.predictions = pd.DataFrame(columns=['Email', 'Age', 'Balance', 'Duration', 'Result', 'Confidence'])
 
-if not st.session_state.authenticated:
-    st.title("Login")
-    email_input = st.text_input("Gmail Address:", placeholder="user@gmail.com")
+st.title("Bank Marketing AI Predictor")
+
+email = st.text_input("Enter your Email to login:")
+
+if email:
+    st.success(f"Welcome: {email}")
     
-    if st.button("Sign In"):
-        if is_valid_gmail(email_input):
-            st.session_state.authenticated = True
-            st.session_state.user_email = email_input
-            st.rerun()
-        else:
-            st.error("Invalid Gmail format")
-    st.stop()
+    st.sidebar.header("Inputs")
+    age = st.sidebar.number_input("Age", min_value=18, max_value=100, value=30)
+    balance = st.sidebar.number_input("Balance", value=1000.0)
+    duration = st.sidebar.number_input("Duration", value=10.0)
 
-st.title(f"Welcome: {st.session_state.user_email}")
-
-if os.path.exists("marketing_model.pth"):
-    try:
-        model = BankModel()
-        model.load_state_dict(torch.load("marketing_model.pth", weights_only=True))
-        model.eval()
+    if st.sidebar.button("Predict"):
+        model = load_model()
+        input_data = torch.tensor([[age, balance, duration]], dtype=torch.float32)
+        with torch.no_grad():
+            output = model(input_data).item()
         
-        st.sidebar.header("Inputs")
-        age = st.sidebar.number_input("Age", 18, 95, 30)
-        balance = st.sidebar.number_input("Balance", 0.0, 100000.0, 1000.0)
-        duration = st.sidebar.number_input("Duration", 0.0, 1000.0, 10.0)
+        result = "YES" if output > 0.5 else "NO"
+        confidence = output if output > 0.5 else 1 - output
 
-        if st.sidebar.button("Predict"):
-            inp = torch.tensor([[float(age), float(balance), float(duration)]], dtype=torch.float32)
-            with torch.no_grad():
-                prediction = model(inp).item()
-            
-            label = "NO" if prediction >= 0.5 else "YES"
-            st.metric("Result", label)
-            st.metric("Confidence", f"{prediction:.4f}")
-            
-            new_data = {
-                "Email": [st.session_state.user_email],
-                "Age": [age],
-                "Balance": [balance],
-                "Duration": [duration],
-                "Prediction": [label],
-                "Confidence": [prediction],
-                "Timestamp": [datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
-            }
-            df = pd.DataFrame(new_data)
-            file_path = "report.xlsx"
-            
-            if os.path.exists(file_path):
-                old_df = pd.read_excel(file_path)
-                df = pd.concat([old_df, df], ignore_index=True)
-            
-            df.to_excel(file_path, index=False)
-            st.success(f"Prediction saved for {st.session_state.user_email}")
+        new_data = {
+            'Email': email,
+            'Age': age,
+            'Balance': balance,
+            'Duration': duration,
+            'Result': result,
+            'Confidence': f"{confidence:.4f}"
+        }
+        st.session_state.predictions = pd.concat([st.session_state.predictions, pd.DataFrame([new_data])], ignore_index=True)
 
-        if os.path.exists("report.xlsx"):
-            with open("report.xlsx", "rb") as f:
-                st.download_button(
-                    label="Download Report",
-                    data=f,
-                    file_name="bank_report.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+        st.write(f"### Result: {result}")
+        st.write(f"### Confidence: {confidence:.4f}")
+
+    if not st.session_state.predictions.empty:
+        st.write("---")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Prediction History")
+            st.dataframe(st.session_state.predictions)
             
-    except Exception as e:
-        st.error(f"Error: {e}")
-else:
-    st.error("Model file missing")
+            output_excel = io.BytesIO()
+            with pd.ExcelWriter(output_excel, engine='openpyxl') as writer:
+                st.session_state.predictions.to_excel(writer, index=False)
+            
+            st.download_button(
+                label="Download Report",
+                data=output_excel.getvalue(),
+                file_name="marketing_report.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+        with col2:
+            st.subheader("Analytics Chart")
+            fig = px.pie(st.session_state.predictions, names='Result', title='Success vs Failure Distribution')
+            st.plotly_chart(fig)
