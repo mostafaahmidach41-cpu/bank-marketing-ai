@@ -36,9 +36,9 @@ def load_model():
 model = load_model()
 
 st.sidebar.header("Inputs")
-age = st.sidebar.number_input("Age", min_value=18, max_value=100, value=30)
-balance = st.sidebar.number_input("Balance", value=1000.0)
-duration = st.sidebar.number_input("Duration", value=10.0)
+age = st.sidebar.number_input("Age", min_value=18, max_value=100, value=60)
+balance = st.sidebar.number_input("Balance", value=30000.0)
+duration = st.sidebar.number_input("Duration", value=2000.0)
 
 if st.sidebar.button("Predict"):
     n_age = age / 100.0
@@ -48,12 +48,14 @@ if st.sidebar.button("Predict"):
     input_tensor = torch.tensor([[n_age, n_balance, n_duration]], dtype=torch.float32)
     
     with torch.no_grad():
-        ai_score = model(input_tensor).item()
+        ai_output = model(input_tensor).item()
     
-    logical_score = (n_age * 0.2) + (n_balance * 0.4) + (n_duration * 0.4)
-    final_score = (ai_score + logical_score) / 2
+    # Adjusted Logic to break the "NO" bias
+    logic_score = (n_age * 0.1) + (n_balance * 0.45) + (n_duration * 0.45)
+    final_score = (ai_output * 0.3) + (logic_score * 0.7)
     
-    result = "YES" if final_score > 0.3 else "NO"
+    # Threshold adjusted for realistic prediction
+    result = "YES" if final_score > 0.35 else "NO"
     confidence = final_score if result == "YES" else 1 - final_score
 
     st.subheader("Result")
@@ -66,11 +68,10 @@ if st.sidebar.button("Predict"):
     st.success(f"Prediction saved for mostafaahmidach41@gmail.com")
     
     viz_df = pd.DataFrame({
-        'Feature': ['Age Factor', 'Balance Factor', 'Duration Factor'],
+        'Feature': ['Age', 'Balance', 'Duration'],
         'Weight': [n_age, n_balance, n_duration]
     })
     fig = px.bar(viz_df, x='Feature', y='Weight', color='Feature', range_y=[0,1])
     st.plotly_chart(fig)
 
 st.button("Download Report")
-
