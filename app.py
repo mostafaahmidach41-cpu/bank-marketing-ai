@@ -1,9 +1,9 @@
-import streamlit as st
 import torch
 import torch.nn as nn
+import torch.optim as optim
 import pandas as pd
-import plotly.express as px
-import os
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 
 class BankModel(nn.Module):
     def __init__(self):
@@ -19,59 +19,36 @@ class BankModel(nn.Module):
         x = self.sigmoid(self.fc3(x))
         return x
 
-st.set_page_config(page_title="AI Bank Marketing", layout="wide")
-st.title("Welcome: mostafaahmidach41@gmail.com")
+# Logic to create balanced training data
+data = {
+    'age': [25, 60, 30, 65, 40, 70, 20, 55, 35, 80],
+    'balance': [500, 50000, 1000, 30000, 2000, 80000, 100, 25000, 1500, 100000],
+    'duration': [50, 2000, 100, 1500, 200, 3000, 30, 1200, 150, 4000],
+    'y': [0, 1, 0, 1, 0, 1, 0, 1, 0, 1]  # 0 = NO, 1 = YES
+}
 
-@st.cache_resource
-def load_model():
-    model = BankModel()
-    if os.path.exists('marketing_model.pth'):
-        try:
-            model.load_state_dict(torch.load('marketing_model.pth'))
-        except:
-            pass
-    model.eval()
-    return model
+df = pd.DataFrame(data)
+X = df[['age', 'balance', 'duration']].values
+y = df['y'].values.reshape(-1, 1)
 
-model = load_model()
+# Normalizing the data
+scaler = StandardScaler()
+X = scaler.fit_transform(X)
 
-st.sidebar.header("Inputs")
-age = st.sidebar.number_input("Age", min_value=18, max_value=100, value=60)
-balance = st.sidebar.number_input("Balance", value=30000.0)
-duration = st.sidebar.number_input("Duration", value=2000.0)
+X_tensor = torch.tensor(X, dtype=torch.float32)
+y_tensor = torch.tensor(y, dtype=torch.float32)
 
-if st.sidebar.button("Predict"):
-    n_age = age / 100.0
-    n_balance = balance / 50000.0
-    n_duration = duration / 4000.0
-    
-    input_tensor = torch.tensor([[n_age, n_balance, n_duration]], dtype=torch.float32)
-    
-    with torch.no_grad():
-        ai_output = model(input_tensor).item()
-    
-    # Adjusted Logic to break the "NO" bias
-    logic_score = (n_age * 0.1) + (n_balance * 0.45) + (n_duration * 0.45)
-    final_score = (ai_output * 0.3) + (logic_score * 0.7)
-    
-    # Threshold adjusted for realistic prediction
-    result = "YES" if final_score > 0.35 else "NO"
-    confidence = final_score if result == "YES" else 1 - final_score
+model = BankModel()
+criterion = nn.BCELoss()
+optimizer = optim.Adam(model.parameters(), lr=0.01)
 
-    st.subheader("Result")
-    res_color = "green" if result == "YES" else "red"
-    st.markdown(f"<h1 style='color: {res_color};'>{result}</h1>", unsafe_allow_html=True)
-    
-    st.subheader("Confidence")
-    st.write(f"{confidence:.4f}")
+# Training Loop
+for epoch in range(500):
+    optimizer.zero_grad()
+    outputs = model(X_tensor)
+    loss = criterion(outputs, y_tensor)
+    loss.backward()
+    optimizer.step()
 
-    st.success(f"Prediction saved for mostafaahmidach41@gmail.com")
-    
-    viz_df = pd.DataFrame({
-        'Feature': ['Age', 'Balance', 'Duration'],
-        'Weight': [n_age, n_balance, n_duration]
-    })
-    fig = px.bar(viz_df, x='Feature', y='Weight', color='Feature', range_y=[0,1])
-    st.plotly_chart(fig)
-
-st.button("Download Report")
+torch.save(model.state_dict(), 'marketing_model.pth')
+print("Model retrained and saved successfully!")
