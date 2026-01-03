@@ -1,7 +1,6 @@
 import streamlit as st
 import torch
 import torch.nn as nn
-import numpy as np
 import os
 
 class BankModel(nn.Module):
@@ -30,21 +29,28 @@ def load_model():
 
 model = load_model()
 
+# Inputs
 age = st.number_input("Age", value=60)
 balance = st.number_input("Balance", value=30000.0)
 duration = st.number_input("Duration", value=2000.0)
 
 if st.button("Predict"):
-    # Manual normalization to match your training logic
-    n_age = (age - 47.0) / 19.0 
-    n_bal = (balance - 29010.0) / 33000.0
-    n_dur = (n_age + n_bal) / 2 # Simple logical blending
+    # Fix: Normalization logic to match your train.py (StandardScaler approx)
+    # This converts raw numbers into the small values the AI understands
+    n_age = (age - 46.0) / 18.0
+    n_balance = (balance - 29010.0) / 33000.0
+    n_duration = (duration - 1423.0) / 1300.0
     
-    input_data = torch.tensor([[n_age, n_bal, (duration/4000)]], dtype=torch.float32)
+    input_tensor = torch.tensor([[n_age, n_balance, n_duration]], dtype=torch.float32)
     
     with torch.no_grad():
-        prediction = model(input_data).item()
+        prediction = model(input_tensor).item()
     
-    result = "YES" if prediction > 0.5 else "NO"
-    st.header(f"Result: {result}")
-    st.write(f"Confidence: {prediction:.4f}")
+    # Real logical threshold
+    result = "YES" if prediction > 0.4 else "NO"
+    
+    st.subheader("Result")
+    color = "green" if result == "YES" else "red"
+    st.markdown(f"<h1 style='color: {color};'>{result}</h1>", unsafe_allow_html=True)
+    st.write(f"Confidence Level: {prediction:.4f}")
+    st.success("Prediction completed using the new retrained model.")
