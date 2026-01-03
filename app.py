@@ -1,8 +1,7 @@
 import streamlit as st
 import torch
 import torch.nn as nn
-import pandas as pd
-import plotly.express as px
+import numpy as np
 import os
 
 class BankModel(nn.Module):
@@ -19,59 +18,33 @@ class BankModel(nn.Module):
         x = self.sigmoid(self.fc3(x))
         return x
 
-st.set_page_config(page_title="AI Bank Marketing", layout="wide")
-st.title("Welcome: mostafaahmidach41@gmail.com")
+st.title("AI Bank Marketing Prediction")
 
 @st.cache_resource
 def load_model():
     model = BankModel()
     if os.path.exists('marketing_model.pth'):
-        try:
-            model.load_state_dict(torch.load('marketing_model.pth'))
-        except:
-            pass
+        model.load_state_dict(torch.load('marketing_model.pth'))
     model.eval()
     return model
 
 model = load_model()
 
-st.sidebar.header("Inputs")
-age = st.sidebar.number_input("Age", min_value=18, max_value=100, value=60)
-balance = st.sidebar.number_input("Balance", value=30000.0)
-duration = st.sidebar.number_input("Duration", value=2000.0)
+age = st.number_input("Age", value=60)
+balance = st.number_input("Balance", value=30000.0)
+duration = st.number_input("Duration", value=2000.0)
 
-if st.sidebar.button("Predict"):
-    n_age = age / 100.0
-    n_balance = balance / 50000.0
-    n_duration = duration / 4000.0
+if st.button("Predict"):
+    # Manual normalization to match your training logic
+    n_age = (age - 47.0) / 19.0 
+    n_bal = (balance - 29010.0) / 33000.0
+    n_dur = (n_age + n_bal) / 2 # Simple logical blending
     
-    input_tensor = torch.tensor([[n_age, n_balance, n_duration]], dtype=torch.float32)
+    input_data = torch.tensor([[n_age, n_bal, (duration/4000)]], dtype=torch.float32)
     
     with torch.no_grad():
-        ai_output = model(input_tensor).item()
+        prediction = model(input_data).item()
     
-    # Adjusted Logic to break the "NO" bias
-    logic_score = (n_age * 0.1) + (n_balance * 0.45) + (n_duration * 0.45)
-    final_score = (ai_output * 0.3) + (logic_score * 0.7)
-    
-    # Threshold adjusted for realistic prediction
-    result = "YES" if final_score > 0.35 else "NO"
-    confidence = final_score if result == "YES" else 1 - final_score
-
-    st.subheader("Result")
-    res_color = "green" if result == "YES" else "red"
-    st.markdown(f"<h1 style='color: {res_color};'>{result}</h1>", unsafe_allow_html=True)
-    
-    st.subheader("Confidence")
-    st.write(f"{confidence:.4f}")
-
-    st.success(f"Prediction saved for mostafaahmidach41@gmail.com")
-    
-    viz_df = pd.DataFrame({
-        'Feature': ['Age', 'Balance', 'Duration'],
-        'Weight': [n_age, n_balance, n_duration]
-    })
-    fig = px.bar(viz_df, x='Feature', y='Weight', color='Feature', range_y=[0,1])
-    st.plotly_chart(fig)
-
-st.button("Download Report")
+    result = "YES" if prediction > 0.5 else "NO"
+    st.header(f"Result: {result}")
+    st.write(f"Confidence: {prediction:.4f}")
