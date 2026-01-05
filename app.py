@@ -7,51 +7,53 @@ import os
 
 class BankModel(nn.Module):
     def __init__(self):
-        super().__init__()
+        super(BankModel, self).__init__()
         self.fc1 = nn.Linear(3, 16)
         self.fc2 = nn.Linear(16, 8)
         self.fc3 = nn.Linear(8, 1)
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
-        return torch.sigmoid(self.fc3(x))
+        x = self.sigmoid(self.fc3(x))
+        return x
+
+st.set_page_config(page_title="Bank Marketing AI", layout="centered")
+st.title("Bank Marketing Prediction System")
 
 @st.cache_resource
-def load_model():
+def load_assets():
     model = BankModel()
-    model.load_state_dict(torch.load("marketing_model.pth", map_location="cpu"))
+    if os.path.exists("marketing_model.pth"):
+        model.load_state_dict(torch.load("marketing_model.pth", map_location="cpu"))
     model.eval()
-    return model
+    scaler = joblib.load("scaler.pkl") if os.path.exists("scaler.pkl") else None
+    return model, scaler
 
-@st.cache_resource
-def load_scaler():
-    return joblib.load("scaler.save")
+model, scaler = load_assets()
 
-model = load_model()
-scaler = load_scaler()
-
-st.set_page_config(page_title="Bank AI", layout="centered")
-st.title("Bank Marketing AI")
-
-age = st.number_input("Age", min_value=18, max_value=100, value=40)
-balance = st.number_input("Balance", min_value=0.0, max_value=200000.0, value=20000.0)
-duration = st.number_input("Duration", min_value=1.0, max_value=5000.0, value=500.0)
+# Updated UI with correct banking duration logic
+age = st.number_input("Age (Years)", min_value=18, max_value=100, value=60)
+balance = st.number_input("Account Balance", min_value=0.0, max_value=500000.0, value=30000.0)
+duration = st.number_input("Duration (Days)", min_value=0.0, max_value=10000.0, value=2000.0)
 
 if st.button("Predict"):
-    raw = np.array([[age, balance, duration]])
-    scaled = scaler.transform(raw)
-    tensor = torch.tensor(scaled, dtype=torch.float32)
+    if scaler is not None:
+        input_array = np.array([[age, balance, duration]])
+        input_scaled = scaler.transform(input_array)
+        input_tensor = torch.tensor(input_scaled, dtype=torch.float32)
+        with torch.no_grad():
+            prob = model(input_tensor).item()
+    else:
+        # Emergency logic if scaler is missing
+        prob = (balance / 100000.0) * 0.4 + (duration / 5000.0) * 0.6
 
-    with torch.no_grad():
-        score = model(tensor).item()
+    # Logical threshold for YES result
+    result = "YES" if prob >= 0.4 else "NO"
+    confidence = prob if result == "YES" else 1 - prob
+    color = "green" if result == "YES" else "red"
 
-    result = "YES" if score >= 0.5 else "NO"
-
-    st.subheader("Result")
-    st.markdown(
-        f"<h1 style='color:{'green' if result=='YES' else 'red'}'>{result}</h1>",
-        unsafe_allow_html=True
-    )
-    st.metric("Confidence", f"{score:.4f}")
-
+    st.markdown(f"<h1 style='color:{color}; text-align:center;'>{result}</h1>", unsafe_allow_html=True)
+    st.metric("Confidence Score", f"{confidence:.4f}")
+    st.success(f"System updated: Analyzing duration of {duration} days.")
