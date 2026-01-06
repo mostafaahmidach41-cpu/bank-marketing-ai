@@ -3,8 +3,28 @@ import pickle
 import numpy as np
 from datetime import datetime
 from fpdf import FPDF
+from supabase import create_client
 
-# --- 1. SAAS SECURITY LAYER (Must be at the top) ---
+# --- 1. CLOUD CONNECTION SETUP ---
+# Replace the URL with your actual Project URL from Supabase Settings
+SUPABASE_URL = "https://ixwvplxnfdjbmdsvdpu.supabase.co" 
+SUPABASE_KEY = "sb_publishable_666yE2Qkv09Y5NQ_QlQaEg_L8fneOgL"
+
+# Initialize Supabase Client
+try:
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception as e:
+    st.error("Connection to Cloud Database failed.")
+
+# Function to verify key in Supabase
+def verify_license_cloud(key_input):
+    try:
+        response = supabase.table("licenses").select("*").eq("key_value", key_input).eq("is_active", True).execute()
+        return len(response.data) > 0
+    except Exception:
+        return False
+
+# --- 2. SAAS SECURITY LAYER ---
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
 
@@ -13,27 +33,23 @@ if not st.session_state.authenticated:
     st.title("Bank AI - Enterprise Edition")
     st.info("Authorized Personnel Only: Please enter your License Key to access the terminal.")
     
-    # Simple SaaS Monetization link
     st.markdown("Don't have a license? [Click here to purchase via Stripe](https://buy.stripe.com/your_link)")
     
     user_key = st.text_input("Enter License Key", type="password")
     
-    if st.button("Activate System"):
-        # This list can be replaced with a Supabase cloud check later
-        VALID_KEYS = ["PREMIUM-2026-X1", "BANK-GLOBAL-PRO", "ADMIN-MASTER"]
-        
-        if user_key in VALID_KEYS:
+    if st.button("Activate via Cloud"):
+        if verify_license_cloud(user_key):
             st.session_state.authenticated = True
-            st.success("System Activated Successfully!")
+            st.success("Cloud Verification Successful!")
             st.rerun()
         else:
-            st.error("Invalid or Expired License Key. Please contact sales.")
-    st.stop() # Prevents loading the app logic unless authenticated
+            st.error("Invalid or Expired License Key.")
+    st.stop() 
 
-# --- 2. MAIN APPLICATION CONFIGURATION ---
+# --- 3. MAIN APPLICATION CONFIGURATION ---
 st.set_page_config(page_title="Bank AI Management System", layout="wide")
 
-# --- 3. PDF REPORT GENERATION FUNCTION ---
+# --- 4. PDF REPORT GENERATION FUNCTION ---
 def create_pdf(age, balance, duration, decision, confidence):
     pdf = FPDF()
     pdf.add_page()
@@ -51,7 +67,7 @@ def create_pdf(age, balance, duration, decision, confidence):
     pdf.cell(200, 10, txt=f"Model Confidence: {confidence}", ln=True)
     return pdf.output(dest='S').encode('latin-1')
 
-# --- 4. LOAD MODEL & SCALER ---
+# --- 5. LOAD MODEL & SCALER ---
 try:
     with open("model.pkl", "rb") as f:
         model = pickle.load(f)
@@ -61,11 +77,10 @@ except FileNotFoundError:
     st.error("Error: Critical model files (model.pkl/scaler.pkl) missing from server.")
     st.stop()
 
-# --- 5. PROFESSIONAL DASHBOARD INTERFACE ---
+# --- 6. PROFESSIONAL DASHBOARD INTERFACE ---
 st.title("Bank AI Customer Assessment Dashboard")
 st.subheader("Enterprise-Grade Decision Support System")
 
-# Logout logic in sidebar
 if st.sidebar.button("Logout / Deactivate"):
     st.session_state.authenticated = False
     st.rerun()
@@ -83,16 +98,13 @@ with left_col:
 with right_col:
     st.markdown("### Assessment Results")
     if assess_btn:
-        # Prepare and Scale Data
         input_data = np.array([[age, balance, duration]])
         scaled_data = scaler.transform(input_data)
         
-        # Prediction logic
         prob = model.predict_proba(scaled_data)[0][1]
         decision = "Eligible (YES)" if prob >= 0.5 else "Not Eligible (NO)"
         conf_score = round(prob, 4)
         
-        # Display results with styling
         if prob >= 0.5:
             st.success(f"**Outcome:** {decision}")
         else:
@@ -100,13 +112,11 @@ with right_col:
             
         st.write(f"**Confidence Score:** {conf_score}")
         
-        # Risk Categorization
         risk_level = "Low Risk" if prob >= 0.7 else "Medium Risk" if prob >= 0.4 else "High Risk"
         st.info(f"**Assessed Risk Level:** {risk_level}")
 
         st.markdown("---")
         
-        # PDF Download Section
         pdf_report = create_pdf(age, balance, duration, decision, conf_score)
         st.download_button(
             label="Download Official PDF Report",
