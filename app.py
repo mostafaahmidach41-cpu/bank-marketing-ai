@@ -4,10 +4,36 @@ import numpy as np
 from datetime import datetime
 from fpdf import FPDF
 
-# --- Page Configuration ---
+# --- 1. SAAS SECURITY LAYER (Must be at the top) ---
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+
+if not st.session_state.authenticated:
+    st.set_page_config(page_title="Bank AI - Enterprise Portal")
+    st.title("Bank AI - Enterprise Edition")
+    st.info("Authorized Personnel Only: Please enter your License Key to access the terminal.")
+    
+    # Simple SaaS Monetization link
+    st.markdown("Don't have a license? [Click here to purchase via Stripe](https://buy.stripe.com/your_link)")
+    
+    user_key = st.text_input("Enter License Key", type="password")
+    
+    if st.button("Activate System"):
+        # This list can be replaced with a Supabase cloud check later
+        VALID_KEYS = ["PREMIUM-2026-X1", "BANK-GLOBAL-PRO", "ADMIN-MASTER"]
+        
+        if user_key in VALID_KEYS:
+            st.session_state.authenticated = True
+            st.success("System Activated Successfully!")
+            st.rerun()
+        else:
+            st.error("Invalid or Expired License Key. Please contact sales.")
+    st.stop() # Prevents loading the app logic unless authenticated
+
+# --- 2. MAIN APPLICATION CONFIGURATION ---
 st.set_page_config(page_title="Bank AI Management System", layout="wide")
 
-# --- PDF Report Generation Function ---
+# --- 3. PDF REPORT GENERATION FUNCTION ---
 def create_pdf(age, balance, duration, decision, confidence):
     pdf = FPDF()
     pdf.add_page()
@@ -25,66 +51,48 @@ def create_pdf(age, balance, duration, decision, confidence):
     pdf.cell(200, 10, txt=f"Model Confidence: {confidence}", ln=True)
     return pdf.output(dest='S').encode('latin-1')
 
-# --- Simple Login System ---
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-
-if not st.session_state.logged_in:
-    st.header("Bank Portal Login")
-    email = st.text_input("Email Address")
-    password = st.text_input("Password", type="password")
-    if st.button("Sign In"):
-        # Simple validation for testing purposes
-        if "@" in email and len(password) >= 6:
-            st.session_state.logged_in = True
-            st.rerun()
-        else:
-            st.error("Invalid email format or password (min 6 characters).")
-    st.stop()
-
-# --- Load Model & Scaler (After Login) ---
+# --- 4. LOAD MODEL & SCALER ---
 try:
     with open("model.pkl", "rb") as f:
         model = pickle.load(f)
     with open("scaler.pkl", "rb") as f:
         scaler = pickle.load(f)
 except FileNotFoundError:
-    st.error("Error: Model files (model.pkl or scaler.pkl) not found.")
+    st.error("Error: Critical model files (model.pkl/scaler.pkl) missing from server.")
     st.stop()
 
-# --- Main Application Interface ---
-st.title("Bank Customer Assessment Dashboard")
-st.subheader("Decision Support System for Marketing Eligibility")
+# --- 5. PROFESSIONAL DASHBOARD INTERFACE ---
+st.title("Bank AI Customer Assessment Dashboard")
+st.subheader("Enterprise-Grade Decision Support System")
 
-if st.sidebar.button("Logout"):
-    st.session_state.logged_in = False
+# Logout logic in sidebar
+if st.sidebar.button("Logout / Deactivate"):
+    st.session_state.authenticated = False
     st.rerun()
 
 st.markdown("---")
-
 left_col, right_col = st.columns([1, 1])
 
 with left_col:
-    st.markdown("### Customer Profile")
+    st.markdown("### Customer Profile Input")
     age = st.slider("Customer Age", 18, 80, 35)
     balance = st.number_input("Account Balance (USD)", 0.0, 500000.0, 25000.0, step=1000.0)
     duration = st.slider("Engagement Duration (Days)", 1, 3650, 180)
-    
     assess_btn = st.button("Run AI Assessment")
 
 with right_col:
-    st.markdown("### Decision Results")
+    st.markdown("### Assessment Results")
     if assess_btn:
-        # Prepare data for prediction
+        # Prepare and Scale Data
         input_data = np.array([[age, balance, duration]])
         scaled_data = scaler.transform(input_data)
         
-        # Prediction and Probability
+        # Prediction logic
         prob = model.predict_proba(scaled_data)[0][1]
         decision = "Eligible (YES)" if prob >= 0.5 else "Not Eligible (NO)"
         conf_score = round(prob, 4)
         
-        # Styling the result based on decision
+        # Display results with styling
         if prob >= 0.5:
             st.success(f"**Outcome:** {decision}")
         else:
@@ -92,22 +100,22 @@ with right_col:
             
         st.write(f"**Confidence Score:** {conf_score}")
         
-        # Risk Categorization logic
+        # Risk Categorization
         risk_level = "Low Risk" if prob >= 0.7 else "Medium Risk" if prob >= 0.4 else "High Risk"
         st.info(f"**Assessed Risk Level:** {risk_level}")
 
         st.markdown("---")
         
-        # --- PDF Download Button ---
+        # PDF Download Section
         pdf_report = create_pdf(age, balance, duration, decision, conf_score)
         st.download_button(
-            label="Download Detailed PDF Report",
+            label="Download Official PDF Report",
             data=pdf_report,
-            file_name=f"Assessment_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+            file_name=f"Bank_AI_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
             mime="application/pdf"
         )
     else:
-        st.info("Awaiting input: Please enter customer data and click assess.")
+        st.info("System ready. Please enter data and run assessment.")
 
 st.markdown("---")
-st.caption("Secure System | Powered by Scikit-Learn | Authorized Personnel Only")
+st.caption("Secure Enterprise System | Powered by Scikit-Learn | Session Managed")
