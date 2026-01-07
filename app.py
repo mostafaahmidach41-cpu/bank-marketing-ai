@@ -2,32 +2,30 @@ import streamlit as st
 import pickle
 import numpy as np
 from fpdf import FPDF
-import base64
 
-# --- 1. PAGE CONFIGURATION ---
-st.set_page_config(page_title="Bank AI - Report Edition", page_icon="📊", layout="wide")
+# --- 1. Page Configuration ---
+st.set_page_config(
+    page_title="Bank AI - Confidence Analytics",
+    layout="wide"
+)
 
-# --- 2. PDF GENERATION FUNCTION ---
-def create_pdf(age, balance, duration, result):
+# --- 2. PDF Report Function (with confidence metric) ---
+def generate_pdf_report(data_summary):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, "Customer Assessment Report", ln=True, align='C')
+    pdf.cell(200, 10, "AI Assessment Report with Confidence Metrics", ln=True, align='C')
     pdf.ln(10)
-    
     pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, f"Customer Age: {age}", ln=True)
-    pdf.cell(200, 10, f"Account Balance: ${balance}", ln=True)
-    pdf.cell(200, 10, f"Relationship Duration: {duration} Years", ln=True)
-    pdf.ln(5)
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(200, 10, f"AI Assessment Result: {result}", ln=True)
-    
+
+    for key, value in data_summary.items():
+        pdf.cell(200, 10, f"{key}: {value}", ln=True)
+
     return pdf.output(dest='S').encode('latin-1')
 
-# --- 3. AI ASSET LOADING ---
+# --- 3. Load Model and Scaler ---
 @st.cache_resource
-def load_assets():
+def load_system_assets():
     try:
         with open("model.pkl", "rb") as f:
             model = pickle.load(f)
@@ -35,55 +33,67 @@ def load_assets():
             scaler = pickle.load(f)
         return model, scaler
     except FileNotFoundError:
-        st.error("Error: Model files not found.")
+        st.error("Model files are missing.")
         return None, None
 
-model, scaler = load_assets()
+model, scaler = load_system_assets()
 
-# --- 4. PREDICTION INTERFACE ---
+# --- 4. Interface and Analysis ---
 if model and scaler:
     st.sidebar.success("System Status: Online")
-    st.sidebar.info("License: DISABLED (Open Access)")
-    
-    st.title("Customer Assessment & Reporting")
-    st.write("### Enter Customer Profile")
-    
+    st.title("Customer Eligibility Assessment with Confidence Analysis")
+
     col1, col2 = st.columns(2)
+
     with col1:
         age = st.slider("Customer Age", 18, 95, 35)
-        balance = st.number_input("Yearly Balance ($)", 0, 500000, 2500)
+        balance = st.number_input("Annual Balance ($)", 0, 500000, 2500)
+
     with col2:
         duration = st.number_input("Relationship Duration (Years)", 0, 50, 5)
-        day = st.slider("Reference Day", 1, 31, 15)
+        reference_day = st.slider("Reference Day", 1, 31, 15)
 
     if st.button("Run AI Assessment"):
         try:
-            # Preparing 3 features as required by the scaler
-            features = np.array([[age, balance, duration]])
-            scaled_features = scaler.transform(features)
-            prediction = model.predict(scaled_features)
-            
-            res_text = "ELIGIBLE" if prediction[0] == 1 else "NOT ELIGIBLE"
-            
+            # Prepare input features
+            input_features = np.array([[age, balance, duration]])
+            scaled_input = scaler.transform(input_features)
+
+            # Prediction and confidence calculation
+            prediction = model.predict(scaled_input)
+            probability = model.predict_proba(scaled_input)[0]
+
+            confidence = max(probability) * 100
+            result_label = "Eligible" if prediction[0] == 1 else "Not Eligible"
+
+            # Display results
+            st.markdown(f"### Decision: **{result_label}**")
+            st.write(f"**AI Confidence Level:** {confidence:.2f}%")
+            st.progress(confidence / 100)
+
             if prediction[0] == 1:
-                st.balloons()
-                st.success(f"✅ Result: {res_text}")
+                st.success(f"The system is {confidence:.2f}% confident the customer will accept the offer.")
             else:
-                st.warning(f"❌ Result: {res_text}")
-            
-            # PDF Generation Section
+                st.warning(f"The system is {confidence:.2f}% confident the customer will not accept the offer at this time.")
+
+            # Generate PDF Report
             st.markdown("---")
-            st.subheader("Download Assessment Report")
-            pdf_data = create_pdf(age, balance, duration, res_text)
+            pdf_bytes = generate_pdf_report({
+                "Age": age,
+                "Balance": balance,
+                "Duration": duration,
+                "Decision": result_label,
+                "Confidence": f"{confidence:.2f}%"
+            })
+
             st.download_button(
-                label="📥 Download PDF Report",
-                data=pdf_data,
-                file_name=f"Customer_Report_{age}.pdf",
+                label="Download Final Report",
+                data=pdf_bytes,
+                file_name="AI_Assessment_Report.pdf",
                 mime="application/pdf"
             )
-        except Exception as e:
-            st.error(f"Error: {e}")
 
-# --- 5. FOOTER ---
-st.sidebar.markdown("---")
-st.sidebar.write("Bank AI v2.2 - Reporting Edition")
+        except Exception as e:
+            st.error(f"Prediction Error: {e}")
+            st.info("Note: If probability error occurs, ensure the model was trained with probability=True.")
+
