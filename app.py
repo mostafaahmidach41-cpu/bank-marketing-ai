@@ -2,93 +2,93 @@ import streamlit as st
 from supabase import create_client
 import pickle
 import numpy as np
+import pandas as pd
 
-# --- 1. DATABASE CONNECTION SETUP ---
-# Project credentials based on your project settings
+# --- 1. CONNECTION CONFIGURATION ---
+# Using the credentials from your project settings
 URL = "https://ixwvplxnfdjbmdsvdpu.supabase.co"
 KEY = "sb_publishable_666yE2Qkv09Y5NQ_QlQaEg_L8fneOgL"
 
 try:
     supabase = create_client(URL, KEY)
 except Exception:
-    st.error("Connection Error: Database unreachable.")
+    st.error("Database connection failed. Please check your Supabase settings.")
 
-# --- 2. AUTHENTICATION FUNCTION ---
-def verify_license(user_input):
+# --- 2. LICENSE VERIFICATION ---
+def check_key_status(input_key):
     try:
-        # Checking the license table after your successful SQL execution
-        response = supabase.table("licenses").select("*").eq("key_value", user_input.strip()).eq("is_active", True).execute()
-        return len(response.data) > 0
-    except Exception:
+        # Querying the table where you successfully disabled RLS
+        result = supabase.table("licenses").select("*").eq("key_value", input_key.strip()).eq("is_active", True).execute()
+        return len(result.data) > 0
+    except Exception as e:
         return False
 
 # --- 3. LOGIN INTERFACE ---
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
 
-if not st.session_state.authenticated:
-    st.set_page_config(page_title="Bank AI Login")
-    st.title("Bank AI - Enterprise Edition")
-    st.info("Access Restricted: Please activate your license.")
+if not st.session_state.logged_in:
+    st.set_page_config(page_title="Bank AI - Activation")
+    st.title("🛡️ Bank AI - Enterprise Edition")
+    st.info("Access Restricted: Please enter a valid license key.")
     
-    # Matching your app's current UI
-    user_key = st.text_input("Enter License Key", type="password")
+    # Matches the input field in your screenshot
+    license_input = st.text_input("Enter License Key", type="password")
     
     if st.button("Activate via Cloud"):
-        # Testing with your key: PREMIUM-BANK-2026
-        if verify_license(user_key):
-            st.session_state.authenticated = True
-            st.success("Identity Verified!")
+        # The key we verified: PREMIUM-BANK-2026
+        if check_key_status(license_input):
+            st.session_state.logged_in = True
+            st.success("Identity Verified. Loading Dashboard...")
             st.rerun()
         else:
-            # Error handling for invalid attempts
+            # Handles the error seen in your app
             st.error("Invalid or Expired License Key.")
     st.stop()
 
-# --- 4. MAIN APPLICATION (AFTER LOGIN) ---
-st.set_page_config(page_title="AI Prediction Dashboard", layout="wide")
-st.title("Customer Assessment Terminal")
+# --- 4. MAIN DASHBOARD (AFTER ACTIVATION) ---
+st.set_page_config(page_title="Customer Assessment Terminal", layout="wide")
+st.title("📊 Customer Assessment Terminal")
 
-# Sidebar for logout and status
 with st.sidebar:
-    st.success("System Status: Online")
-    if st.button("Sign Out"):
-        st.session_state.authenticated = False
+    st.success("Connection: Online")
+    if st.button("Log Out"):
+        st.session_state.logged_in = False
         st.rerun()
 
-# --- 5. AI MODEL LOADING ---
+# --- 5. AI PREDICTION ENGINE ---
 @st.cache_resource
-def load_ai_assets():
+def load_assets():
     try:
         with open("model.pkl", "rb") as f:
-            model = pickle.load(f)
+            m = pickle.load(f)
         with open("scaler.pkl", "rb") as f:
-            scaler = pickle.load(f)
-        return model, scaler
+            s = pickle.load(f)
+        return m, s
     except FileNotFoundError:
-        st.error("Error: AI Model files ('model.pkl', 'scaler.pkl') missing.")
+        st.error("Model files ('model.pkl', 'scaler.pkl') missing from GitHub.")
         return None, None
 
-model, scaler = load_ai_assets()
+model, scaler = load_assets()
 
-# --- 6. PREDICTION INTERFACE ---
 if model and scaler:
-    col1, col2 = st.columns(2)
-    with col1:
-        age = st.slider("Customer Age", 18, 95, 30)
-        balance = st.number_input("Yearly Balance", 0, 500000, 1500)
-    with col2:
-        duration = st.number_input("Last Contact Duration (sec)", 0, 5000, 200)
-        day = st.slider("Day of Month", 1, 31, 15)
+    st.subheader("Customer Data Input")
+    c1, c2 = st.columns(2)
+    with c1:
+        age = st.slider("Age", 18, 90, 35)
+        balance = st.number_input("Annual Balance (USD)", 0, 500000, 10000)
+    with c2:
+        duration = st.number_input("Last Interaction Duration (sec)", 0, 5000, 250)
+        day = st.slider("Day of the Month", 1, 31, 15)
 
-    if st.button("Predict Subscription Eligibility"):
-        # Simple prediction logic
-        features = np.array([[age, balance, day, duration]])
-        scaled_features = scaler.transform(features)
-        prediction = model.predict(scaled_features)
+    if st.button("Run AI Assessment"):
+        # Predict subscription eligibility
+        data = np.array([[age, balance, day, duration]])
+        scaled_data = scaler.transform(data)
+        prediction = model.predict(scaled_data)
         
         if prediction[0] == 1:
             st.balloons()
-            st.success("Prediction: Customer is ELIGIBLE.")
+            st.success("✅ Assessment: Customer is HIGHLY ELIGIBLE.")
         else:
-            st.warning("Prediction: Customer is NOT ELIGIBLE.")
+            st.warning("⚠️ Assessment: Customer is NOT ELIGIBLE at this time.")
