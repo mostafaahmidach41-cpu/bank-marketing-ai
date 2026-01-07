@@ -1,83 +1,89 @@
 import streamlit as st
 import pickle
 import numpy as np
-import pandas as pd
+from fpdf import FPDF
+import base64
 
 # --- 1. PAGE CONFIGURATION ---
-st.set_page_config(
-    page_title="Customer Assessment Terminal",
-    page_icon="📊",
-    layout="wide"
-)
+st.set_page_config(page_title="Bank AI - Report Edition", page_icon="📊", layout="wide")
 
-# --- 2. HEADER (English Interface) ---
-st.title("Customer Assessment Terminal")
-st.subheader("Enterprise AI Prediction System")
-st.markdown("---")
+# --- 2. PDF GENERATION FUNCTION ---
+def create_pdf(age, balance, duration, result):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(200, 10, "Customer Assessment Report", ln=True, align='C')
+    pdf.ln(10)
+    
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, f"Customer Age: {age}", ln=True)
+    pdf.cell(200, 10, f"Account Balance: ${balance}", ln=True)
+    pdf.cell(200, 10, f"Relationship Duration: {duration} Years", ln=True)
+    pdf.ln(5)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(200, 10, f"AI Assessment Result: {result}", ln=True)
+    
+    return pdf.output(dest='S').encode('latin-1')
 
-# --- 3. AI MODEL LOADING ---
+# --- 3. AI ASSET LOADING ---
 @st.cache_resource
 def load_assets():
     try:
-        # Loading the models from your GitHub repository
         with open("model.pkl", "rb") as f:
             model = pickle.load(f)
         with open("scaler.pkl", "rb") as f:
             scaler = pickle.load(f)
         return model, scaler
     except FileNotFoundError:
-        st.error("Critical Error: Model files not found in repository.")
+        st.error("Error: Model files not found.")
         return None, None
 
 model, scaler = load_assets()
 
 # --- 4. PREDICTION INTERFACE ---
 if model and scaler:
-    # Sidebar status matching your latest screenshots
     st.sidebar.success("System Status: Online")
-    st.sidebar.info("License Verification: DISABLED (Open Access)")
+    st.sidebar.info("License: DISABLED (Open Access)")
     
-    st.write("### Customer Input Data")
+    st.title("Customer Assessment & Reporting")
+    st.write("### Enter Customer Profile")
     
-    # Input fields organized into columns to match your UI layout
     col1, col2 = st.columns(2)
-    
     with col1:
         age = st.slider("Customer Age", 18, 95, 35)
-        balance = st.number_input("Average Yearly Balance", 0, 500000, 2500)
-        day = st.slider("Last Contact Day of Month", 1, 31, 15)
-        
+        balance = st.number_input("Yearly Balance ($)", 0, 500000, 2500)
     with col2:
-        duration = st.number_input("Last Contact Duration (seconds)", 0, 5000, 300)
-        campaign = st.number_input("Number of Contacts during Campaign", 1, 50, 1)
+        duration = st.number_input("Relationship Duration (Years)", 0, 50, 5)
+        day = st.slider("Reference Day", 1, 31, 15)
 
-    st.markdown("---")
-    
-    # Prediction Trigger
     if st.button("Run AI Assessment"):
         try:
-            # FIX for ValueError: 
-            # Ensure features match the exact number of columns used during model training
-            # Based on your UI, we use: Age, Balance, Day, Duration
-            features = np.array([[age, balance, day, duration]])
-            
-            # Scaling and Predicting
+            # Preparing 3 features as required by the scaler
+            features = np.array([[age, balance, duration]])
             scaled_features = scaler.transform(features)
             prediction = model.predict(scaled_features)
             
-            # Displaying Results
-            st.subheader("Assessment Result:")
+            res_text = "ELIGIBLE" if prediction[0] == 1 else "NOT ELIGIBLE"
+            
             if prediction[0] == 1:
                 st.balloons()
-                st.success("✅ ELIGIBLE: Customer is likely to subscribe to the bank product.")
+                st.success(f"✅ Result: {res_text}")
             else:
-                st.warning("❌ NOT ELIGIBLE: Customer is unlikely to subscribe at this time.")
+                st.warning(f"❌ Result: {res_text}")
+            
+            # PDF Generation Section
+            st.markdown("---")
+            st.subheader("Download Assessment Report")
+            pdf_data = create_pdf(age, balance, duration, res_text)
+            st.download_button(
+                label="📥 Download PDF Report",
+                data=pdf_data,
+                file_name=f"Customer_Report_{age}.pdf",
+                mime="application/pdf"
+            )
         except Exception as e:
-            st.error(f"Prediction Error: {e}")
-
-else:
-    st.warning("Please ensure model files are uploaded to GitHub to enable predictions.")
+            st.error(f"Error: {e}")
 
 # --- 5. FOOTER ---
 st.sidebar.markdown("---")
-st.sidebar.write("Bank AI v2.0 - Stable Edition")
+st.sidebar.write("Bank AI v2.2 - Reporting Edition")
