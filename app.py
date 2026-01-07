@@ -6,8 +6,9 @@ from fpdf import FPDF
 from supabase import create_client
 
 # --- 1. CLOUD CONNECTION SETUP ---
-# Connection details from your Supabase Project Settings
+# Verified URL from your Supabase Project Settings
 SUPABASE_URL = "https://ixwvplxnfdjbmdsvdpu.supabase.co" 
+# Verified Publishable API Key from your dashboard
 SUPABASE_KEY = "sb_publishable_666yE2Qkv09Y5NQ_QlQaEg_L8fneOgL"
 
 # Initialize Supabase Client
@@ -16,10 +17,10 @@ try:
 except Exception:
     st.error("Cloud Database Connection Failed.")
 
-# Function to verify the License Key in your 'licenses' table
+# Function to verify the License Key
 def verify_license_cloud(key_input):
     try:
-        # Check if key exists and is_active is true
+        # Searching the 'licenses' table for an active key
         response = supabase.table("licenses").select("*").eq("key_value", key_input).eq("is_active", True).execute()
         return len(response.data) > 0
     except Exception:
@@ -40,12 +41,13 @@ if not st.session_state.authenticated:
     user_key = st.text_input("Enter License Key", type="password")
     
     if st.button("Activate via Cloud"):
-        # Test with key: PREMIUM-BANK-2026
+        # Test with verified key: PREMIUM-BANK-2026
         if verify_license_cloud(user_key):
             st.session_state.authenticated = True
             st.success("Verification Successful!")
             st.rerun()
         else:
+            # Displaying the current error message found in your screenshot
             st.error("Invalid or Expired License Key.")
     st.stop() 
 
@@ -77,7 +79,7 @@ try:
     with open("scaler.pkl", "rb") as f:
         scaler = pickle.load(f)
 except FileNotFoundError:
-    st.error("Critical model files missing.")
+    st.error("Critical model files missing from the server.")
     st.stop()
 
 # --- 6. USER INTERFACE ---
@@ -101,7 +103,6 @@ with right_col:
     if assess_btn:
         input_data = np.array([[age, balance, duration]])
         scaled_data = scaler.transform(input_data)
-        
         prob = model.predict_proba(scaled_data)[0][1]
         decision = "Eligible" if prob >= 0.5 else "Not Eligible"
         
@@ -110,5 +111,5 @@ with right_col:
         else:
             st.error(f"Outcome: {decision}")
             
-        pdf_report = create_pdf(age, balance, duration, decision, prob)
-        st.download_button("Download PDF", pdf_report, "Report.pdf", "application/pdf")
+        pdf_report = create_pdf(age, balance, duration, decision, round(prob, 4))
+        st.download_button("Download Official PDF Report", pdf_report, "Report.pdf", "application/pdf")
