@@ -6,27 +6,26 @@ from fpdf import FPDF
 from supabase import create_client
 
 # --- 1. CLOUD CONNECTION SETUP ---
-# Verified URL from your Supabase Project Settings
-SUPABASE_URL = "https://ixwvplxnfdjbmdsvdpu.supabase.co" 
-# Verified Publishable API Key from your dashboard
+# Database project URL
+SUPABASE_URL = "https://ixwvplxnfdjbmdsvdpu.supabase.co"
+# Publishable API Key from your dashboard
 SUPABASE_KEY = "sb_publishable_666yE2Qkv09Y5NQ_QlQaEg_L8fneOgL"
 
-# Initialize Supabase Client
+# Initialize connection
 try:
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception:
     st.error("Cloud Database Connection Failed.")
 
-# Function to verify the License Key
+# Logic to verify license from Supabase
 def verify_license_cloud(key_input):
     try:
-        # Searching the 'licenses' table for an active key
         response = supabase.table("licenses").select("*").eq("key_value", key_input).eq("is_active", True).execute()
         return len(response.data) > 0
     except Exception:
         return False
 
-# --- 2. SAAS SECURITY LAYER (GATEWAY) ---
+# --- 2. SECURITY GATEWAY ---
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
 
@@ -35,26 +34,24 @@ if not st.session_state.authenticated:
     st.title("Bank AI - Enterprise Edition")
     st.info("Authorized Personnel Only: Please enter your License Key to access the terminal.")
     
-    # Stripe Payment Link (Replace 'your_link' with the link from your Stripe Dashboard)
-    st.markdown("Don't have a license? [Click here to purchase via Stripe](https://buy.stripe.com/your_link)")
+    # Stripe link for purchasing
+    st.markdown("Don't have a license? [Click here to purchase via Stripe](https://buy.stripe.com/your_stripe_link)")
     
     user_key = st.text_input("Enter License Key", type="password")
     
     if st.button("Activate via Cloud"):
-        # Test with verified key: PREMIUM-BANK-2026
+        # The key we confirmed in the database
         if verify_license_cloud(user_key):
             st.session_state.authenticated = True
             st.success("Verification Successful!")
             st.rerun()
         else:
-            # Displaying the current error message found in your screenshot
             st.error("Invalid or Expired License Key.")
-    st.stop() 
+    st.stop()
 
-# --- 3. MAIN APP CONFIGURATION (POST-LOGIN) ---
+# --- 3. MAIN DASHBOARD ---
 st.set_page_config(page_title="Bank AI Management System", layout="wide")
 
-# --- 4. PDF REPORT GENERATION ---
 def create_pdf(age, balance, duration, decision, confidence):
     pdf = FPDF()
     pdf.add_page()
@@ -72,17 +69,17 @@ def create_pdf(age, balance, duration, decision, confidence):
     pdf.cell(200, 10, txt=f"Model Confidence: {confidence}", ln=True)
     return pdf.output(dest='S').encode('latin-1')
 
-# --- 5. LOAD AI MODELS ---
+# --- 4. LOAD MODELS ---
 try:
     with open("model.pkl", "rb") as f:
         model = pickle.load(f)
     with open("scaler.pkl", "rb") as f:
         scaler = pickle.load(f)
 except FileNotFoundError:
-    st.error("Critical model files missing from the server.")
+    st.error("Critical AI model files missing.")
     st.stop()
 
-# --- 6. USER INTERFACE ---
+# --- 5. INTERFACE ---
 st.title("Bank AI Customer Assessment Dashboard")
 
 if st.sidebar.button("Logout"):
