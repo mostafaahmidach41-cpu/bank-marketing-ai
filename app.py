@@ -1,90 +1,77 @@
 import streamlit as st
-from supabase import create_client
 import pickle
 import numpy as np
+import pandas as pd
 
-URL = "https://ixwvplxnfdjbmdsvdpu.supabase.co"
-KEY = "sb_publishable_666yE2Qkv09Y5NQ_QlQaEg_L8fneOgL"
+# --- 1. PAGE CONFIGURATION ---
+st.set_page_config(
+    page_title="Bank AI Terminal",
+    page_icon="📊",
+    layout="wide"
+)
 
-try:
-    supabase = create_client(URL, KEY)
-except Exception:
-    st.error("Database connection failed.")
+# --- 2. HEADER ---
+st.title("📊 Customer Assessment Terminal")
+st.subheader("Enterprise AI Prediction System")
+st.markdown("---")
 
-def verify_license(user_input):
-    try:
-        response = (
-            supabase.table("licenses")
-            .select("*")
-            .eq("key_value", user_input.strip())
-            .eq("is_active", True)
-            .execute()
-        )
-        return len(response.data) > 0
-    except Exception:
-        return False
-
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-
-if not st.session_state.authenticated:
-    st.set_page_config(page_title="Login - Bank AI", page_icon="🛡️")
-    st.title("🛡️ Bank AI - Enterprise Edition")
-    st.info("Access restricted. Please enter a valid license key.")
-
-    user_key = st.text_input("License Key", type="password", placeholder="PREMIUM-XXXX-XXXX")
-
-    if st.button("Activate via Cloud"):
-        if verify_license(user_key):
-            st.session_state.authenticated = True
-            st.success("License verified successfully. Loading system...")
-            st.rerun()
-        else:
-            st.error("Invalid or expired license key.")
-    st.stop()
-
-st.set_page_config(page_title="Dashboard - Bank AI", layout="wide")
-st.title("📊 Smart Client Evaluation Terminal")
-
-with st.sidebar:
-    st.success("System Status: Connected")
-    if st.button("Logout"):
-        st.session_state.authenticated = False
-        st.rerun()
-
+# --- 3. AI MODEL LOADING ---
 @st.cache_resource
-def load_model():
+def load_assets():
     try:
+        # Loading the models you uploaded to GitHub
         with open("model.pkl", "rb") as f:
             model = pickle.load(f)
         with open("scaler.pkl", "rb") as f:
             scaler = pickle.load(f)
         return model, scaler
     except FileNotFoundError:
-        st.error("Model files not found (model.pkl, scaler.pkl).")
+        st.error("Critical Error: 'model.pkl' or 'scaler.pkl' not found in repository.")
         return None, None
 
-model, scaler = load_model()
+model, scaler = load_assets()
 
+# --- 4. PREDICTION INTERFACE ---
 if model and scaler:
-    st.subheader("Client Input Data")
+    st.sidebar.success("System Status: Online")
+    st.sidebar.info("License Verification: DISABLED (Open Access)")
+    
+    st.write("### Customer Input Data")
+    
+    # Organizing inputs into columns for better UI
     col1, col2 = st.columns(2)
-
+    
     with col1:
-        age = st.slider("Age", 18, 95, 30)
-        balance = st.number_input("Annual Balance (USD)", 0, 500000, 2000)
-
+        age = st.slider("Customer Age", 18, 95, 35)
+        balance = st.number_input("Average Yearly Balance", 0, 500000, 2500)
+        day = st.slider("Last Contact Day of Month", 1, 31, 15)
+        
     with col2:
-        duration = st.number_input("Last Call Duration (seconds)", 0, 5000, 300)
-        day = st.slider("Contact Day of Month", 1, 31, 15)
+        duration = st.number_input("Last Contact Duration (seconds)", 0, 5000, 300)
+        campaign = st.number_input("Number of Contacts during Campaign", 1, 50, 1)
 
-    if st.button("Run AI Evaluation"):
+    st.markdown("---")
+    
+    # Prediction Trigger
+    if st.button("Run AI Assessment"):
+        # Preparing features based on your model requirements
         features = np.array([[age, balance, day, duration]])
-        prediction = model.predict(scaler.transform(features))
-
+        
+        # Scaling and Predicting
+        scaled_features = scaler.transform(features)
+        prediction = model.predict(scaled_features)
+        
+        # Displaying Results
+        st.subheader("Assessment Result:")
         if prediction[0] == 1:
             st.balloons()
-            st.success("Client is eligible for the banking product.")
+            st.success("✅ ELIGIBLE: Customer is likely to subscribe to the bank product.")
         else:
-            st.warning("Client is not eligible at this time.")
+            st.warning("❌ NOT ELIGIBLE: Customer is unlikely to subscribe at this time.")
 
+else:
+    st.warning("Please ensure model files are uploaded to GitHub to enable predictions.")
+
+# --- 5. FOOTER ---
+st.sidebar.markdown("---")
+st.sidebar.write("Bank AI v2.0 - Stable Edition")
