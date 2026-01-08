@@ -7,7 +7,7 @@ from supabase import create_client
 st.cache_resource.clear()
 
 # --- 1. SUPABASE SETUP ---
-URL = "https://ixwvplxnfdjbmdsvdpu.supabase.co"
+URL = "https://ixwvplxnfndjbmdsvdpu.supabase.co"
 KEY = "sb_publishable_666yE2Qkv09Y5NQ_QlQaEg_L8fneOgL"
 supabase = create_client(URL, KEY)
 
@@ -85,3 +85,4 @@ if model and scaler:
         except Exception as e:
             st.error(f"System Error: {e}")
             st.info("Technical Note: Ensure model.pkl expects exactly 3 features.")
+
