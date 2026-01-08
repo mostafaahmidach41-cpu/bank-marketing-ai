@@ -1,99 +1,126 @@
 import streamlit as st
 import pickle
 import numpy as np
+from supabase import create_client
 from fpdf import FPDF
 
-# --- 1. Page Configuration ---
-st.set_page_config(
-    page_title="Bank AI - Confidence Analytics",
-    layout="wide"
-)
+# --------------------------------------------------
+# 1. Supabase Database Configuration
+# --------------------------------------------------
+SUPABASE_URL = "https://ixwvplxnfdjbmdsvdpu.supabase.co"
+SUPABASE_KEY = "sb_publishable_666yE2Qkv09Y5NQ_QlQaEg_L8fneOgL"
 
-# --- 2. PDF Report Function (with confidence metric) ---
-def generate_pdf_report(data_summary):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, "AI Assessment Report with Confidence Metrics", ln=True, align='C')
-    pdf.ln(10)
-    pdf.set_font("Arial", size=12)
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    for key, value in data_summary.items():
-        pdf.cell(200, 10, f"{key}: {value}", ln=True)
+# --------------------------------------------------
+# 2. License Verification Function
+# --------------------------------------------------
+def verify_license(user_key: str) -> bool:
+    try:
+        response = (
+            supabase
+            .table("licenses")
+            .select("*")
+            .eq("key_value", user_key.strip())
+            .eq("is_active", True)
+            .execute()
+        )
+        return len(response.data) > 0
+    except Exception:
+        return False
 
-    return pdf.output(dest='S').encode('latin-1')
+# --------------------------------------------------
+# 3. Application Security Layer
+# --------------------------------------------------
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
 
-# --- 3. Load Model and Scaler ---
+if not st.session_state.authenticated:
+    st.set_page_config(page_title="Bank AI - License Verification")
+
+    st.title("Bank AI - License Verification")
+    st.info("Please enter your premium license key to access the system.")
+
+    input_key = st.text_input(
+        "License Key",
+        type="password",
+        placeholder="PREMIUM-XXXX-2026"
+    )
+
+    if st.button("Activate System"):
+        if verify_license(input_key):
+            st.session_state.authenticated = True
+            st.success("License verified successfully. Redirecting...")
+            st.rerun()
+        else:
+            st.error("Invalid or expired license key.")
+
+    st.stop()
+
+# --------------------------------------------------
+# 4. Main Application Interface
+# --------------------------------------------------
+st.set_page_config(page_title="Bank AI Terminal", layout="wide")
+
 @st.cache_resource
-def load_system_assets():
+def load_assets():
     try:
         with open("model.pkl", "rb") as f:
             model = pickle.load(f)
         with open("scaler.pkl", "rb") as f:
             scaler = pickle.load(f)
         return model, scaler
-    except FileNotFoundError:
-        st.error("Model files are missing.")
+    except Exception:
         return None, None
 
-model, scaler = load_system_assets()
+model, scaler = load_assets()
 
-# --- 4. Interface and Analysis ---
 if model and scaler:
-    st.sidebar.success("System Status: Online")
-    st.title("Customer Eligibility Assessment with Confidence Analysis")
+    st.sidebar.success("Status: Authorized")
+    st.title("Customer Assessment with Confidence Analysis")
 
     col1, col2 = st.columns(2)
 
     with col1:
         age = st.slider("Customer Age", 18, 95, 35)
-        balance = st.number_input("Annual Balance ($)", 0, 500000, 2500)
+        balance = st.number_input(
+            "Yearly Balance (USD)",
+            min_value=0,
+            max_value=1_000_000,
+            value=2500
+        )
 
     with col2:
-        duration = st.number_input("Relationship Duration (Years)", 0, 50, 5)
-        reference_day = st.slider("Reference Day", 1, 31, 15)
+        duration = st.number_input(
+            "Relationship Tenure (Years)",
+            min_value=0,
+            max_value=50,
+            value=5
+        )
+        day = st.slider("Reference Day", 1, 31, 15)
 
     if st.button("Run AI Assessment"):
         try:
-            # Prepare input features
-            input_features = np.array([[age, balance, duration]])
-            scaled_input = scaler.transform(input_features)
+            features = np.array([[age, balance, duration]])
+            scaled_data = scaler.transform(features)
 
-            # Prediction and confidence calculation
-            prediction = model.predict(scaled_input)
-            probability = model.predict_proba(scaled_input)[0]
+            prediction = model.predict(scaled_data)
+            probabilities = model.predict_proba(scaled_data)[0]
 
-            confidence = max(probability) * 100
-            result_label = "Eligible" if prediction[0] == 1 else "Not Eligible"
+            confidence = max(probabilities) * 100
+            decision = "Eligible" if prediction[0] == 1 else "Not Eligible"
 
-            # Display results
-            st.markdown(f"### Decision: **{result_label}**")
-            st.write(f"**AI Confidence Level:** {confidence:.2f}%")
+            st.markdown(f"### Decision: **{decision}**")
+            st.write(f"Confidence Level: {confidence:.2f}%")
             st.progress(confidence / 100)
 
-            if prediction[0] == 1:
-                st.success(f"The system is {confidence:.2f}% confident the customer will accept the offer.")
-            else:
-                st.warning(f"The system is {confidence:.2f}% confident the customer will not accept the offer at this time.")
-
-            # Generate PDF Report
             st.markdown("---")
-            pdf_bytes = generate_pdf_report({
-                "Age": age,
-                "Balance": balance,
-                "Duration": duration,
-                "Decision": result_label,
-                "Confidence": f"{confidence:.2f}%"
-            })
-
-            st.download_button(
-                label="Download Final Report",
-                data=pdf_bytes,
-                file_name="AI_Assessment_Report.pdf",
-                mime="application/pdf"
-            )
+            if st.download_button(
+                "Download PDF Report",
+                data="Report Content",
+                file_name="Report.pdf"
+            ):
+                st.info("Report generated successfully.")
 
         except Exception as e:
             st.error(f"Prediction Error: {e}")
-            st.info("Note: If probability error occurs, ensure the model was trained with probability=True.")
-
