@@ -1,14 +1,14 @@
 import streamlit as st
 import pickle
 import numpy as np
-from supabase import create_client
+from supabase import create_client, Client
 from fpdf import FPDF
 
-# --- 1. SUPABASE CONNECTION (Verified URL) ---
-# This specific URL was the key to solving the connection issues
+# --- 1. DATABASE CONNECTION ---
+# Using the verified project URL and Anon Key
 URL = "https://ixwvplxnfndjbmdsvdpu.supabase.co"
-KEY = "sb_publishable_666yE2Qkv09Y5NQ_QlQaEg_L8fneOgL"
-supabase = create_client(URL, KEY)
+KEY = "YOUR_SUPABASE_ANON_KEY" # Replace with your actual Anon Key
+supabase: Client = create_client(URL, KEY)
 
 # --- 2. AUTHENTICATION LOGIC ---
 if 'authenticated' not in st.session_state:
@@ -16,21 +16,33 @@ if 'authenticated' not in st.session_state:
 
 if not st.session_state.authenticated:
     st.title("🛡️ Enterprise Security Portal")
-    # Ensuring no trailing spaces interfere with the check
-    user_key = st.text_input("License Key", type="password").strip()
+    st.write("System activation required to access AI tools.")
     
-    if st.button("Activate"):
-        try:
-            # Direct query to the verified licenses table
-            res = supabase.table("licenses").select("*").eq("key_value", user_key).eq("is_active", True).execute()
-            if res.data and len(res.data) > 0:
-                st.session_state.authenticated = True
-                st.success("Access Granted!")
-                st.rerun()
-            else:
-                st.error("Invalid or Expired License Key.")
-        except Exception as e:
-            st.error(f"Authentication Failure: {e}")
+    # User enters the name they used during Stripe checkout
+    user_key = st.text_input("Username / License Key", placeholder="Enter your registered name").strip()
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Activate System"):
+            try:
+                # Querying the licenses table for an active entry
+                res = supabase.table("licenses").select("*").eq("key_value", user_key).eq("is_active", True).execute()
+                if res.data and len(res.data) > 0:
+                    st.session_state.authenticated = True
+                    st.success("Access Granted!")
+                    st.rerun()
+                else:
+                    st.error("Invalid Username or Inactive License.")
+            except Exception as e:
+                st.error(f"Authentication Failure: {e}")
+    
+    with col2:
+        # Direct link to your Stripe payment page
+        payment_url = "https://buy.stripe.com/test_8x29ATe0ubQ06NX1qyfUQ00"
+        st.markdown(f'''<a href="{payment_url}" target="_blank">
+            <button style="width:100%; height:42px; background-color:#6772E5; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">
+                Get License - $49.00
+            </button></a>''', unsafe_allow_html=True)
     st.stop()
 
 # --- 3. PDF REPORT GENERATOR ---
@@ -50,7 +62,7 @@ def create_assessment_report(age, balance, tenure, result, confidence):
     pdf.cell(200, 10, txt=f"AI Confidence Score: {confidence:.2f}%", ln=True)
     return pdf.output(dest='S').encode('latin-1')
 
-# --- 4. MAIN TERMINAL INTERFACE ---
+# --- 4. ASSET LOADING & MAIN UI ---
 @st.cache_resource
 def load_assets():
     try:
@@ -63,7 +75,10 @@ model, scaler = load_assets()
 
 if model and scaler:
     st.title("Customer AI Assessment Terminal")
-    st.sidebar.success("License Status: ACTIVE ✅") # Confirmed status
+    st.sidebar.success("License Status: ACTIVE ✅")
+    if st.sidebar.button("Logout"):
+        st.session_state.authenticated = False
+        st.rerun()
     
     col1, col2 = st.columns(2)
     with col1:
@@ -71,12 +86,10 @@ if model and scaler:
         balance = st.number_input("Yearly Balance ($)", 0, 1000000, 250000)
     with col2:
         tenure = st.number_input("Relationship Tenure (Years)", 0, 50, 8)
-        # Informational only to maintain 3-feature model compatibility
-        _ref_day = st.slider("Reference Day (Info Only)", 1, 31, 15)
+        _info = st.info("Predicting based on Age, Balance, and Tenure.")
 
     if st.button("Generate AI Decision"):
         try:
-            # Strictly using 3 features to avoid Scaler shape errors
             input_array = np.array([[age, balance, tenure]])
             scaled_input = scaler.transform(input_array)
             
@@ -92,15 +105,16 @@ if model and scaler:
             else:
                 st.warning(f"Result: {assessment} | Confidence: {confidence:.2f}%")
             
-            st.progress(confidence / 100) # Confidence visualization
+            st.progress(confidence / 100)
 
-            # Triggering the PDF report download
             pdf_out = create_assessment_report(age, balance, tenure, assessment, confidence)
             st.download_button(
                 label="📥 Download PDF Report",
                 data=pdf_out,
-                file_name=f"Report_{age}.pdf",
+                file_name=f"Assessment_{user_key}.pdf",
                 mime="application/pdf"
             )
         except Exception as e:
             st.error(f"Assessment Error: {e}")
+else:
+    st.error("System Error: Model or Scaler files not found.")
