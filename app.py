@@ -4,53 +4,53 @@ import numpy as np
 from supabase import create_client
 from fpdf import FPDF
 
-# --- 1. SUPABASE CONFIGURATION ---
-# The verified working URL
+# --- 1. SUPABASE CONNECTION (Verified URL) ---
+# This specific URL was the key to solving the connection issues
 URL = "https://ixwvplxnfndjbmdsvdpu.supabase.co"
 KEY = "sb_publishable_666yE2Qkv09Y5NQ_QlQaEg_L8fneOgL"
 supabase = create_client(URL, KEY)
 
-# --- 2. AUTHENTICATION SYSTEM ---
+# --- 2. AUTHENTICATION LOGIC ---
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
 
 if not st.session_state.authenticated:
     st.title("🛡️ Enterprise Security Portal")
-    # Using strip() to ensure no accidental spaces break the check
+    # Ensuring no trailing spaces interfere with the check
     user_key = st.text_input("License Key", type="password").strip()
     
     if st.button("Activate"):
         try:
-            # Checking against the licenses table
+            # Direct query to the verified licenses table
             res = supabase.table("licenses").select("*").eq("key_value", user_key).eq("is_active", True).execute()
             if res.data and len(res.data) > 0:
                 st.session_state.authenticated = True
-                st.success("System Activated Successfully!")
+                st.success("Access Granted!")
                 st.rerun()
             else:
                 st.error("Invalid or Expired License Key.")
         except Exception as e:
-            st.error(f"Connection Error: {e}")
+            st.error(f"Authentication Failure: {e}")
     st.stop()
 
-# --- 3. PDF GENERATION ENGINE ---
-def generate_pdf(age, balance, tenure, result, confidence):
+# --- 3. PDF REPORT GENERATOR ---
+def create_assessment_report(age, balance, tenure, result, confidence):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, txt="AI Eligibility Assessment Report", ln=True, align='C')
+    pdf.cell(200, 10, txt="Customer AI Assessment Report", ln=True, align='C')
     pdf.ln(10)
     pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, txt=f"Customer Age: {age}", ln=True)
-    pdf.cell(200, 10, txt=f"Account Balance: ${balance:,}", ln=True)
-    pdf.cell(200, 10, txt=f"Tenure: {tenure} Years", ln=True)
+    pdf.cell(200, 10, txt=f"Age: {age}", ln=True)
+    pdf.cell(200, 10, txt=f"Balance: ${balance:,}", ln=True)
+    pdf.cell(200, 10, txt=f"Relationship Tenure: {tenure} Years", ln=True)
     pdf.ln(5)
     pdf.set_font("Arial", 'B', 14)
-    pdf.cell(200, 10, txt=f"Decision: {result}", ln=True)
-    pdf.cell(200, 10, txt=f"Model Confidence: {confidence:.2f}%", ln=True)
+    pdf.cell(200, 10, txt=f"Final Decision: {result}", ln=True)
+    pdf.cell(200, 10, txt=f"AI Confidence Score: {confidence:.2f}%", ln=True)
     return pdf.output(dest='S').encode('latin-1')
 
-# --- 4. MAIN ASSESSMENT TERMINAL ---
+# --- 4. MAIN TERMINAL INTERFACE ---
 @st.cache_resource
 def load_assets():
     try:
@@ -63,7 +63,7 @@ model, scaler = load_assets()
 
 if model and scaler:
     st.title("Customer AI Assessment Terminal")
-    st.sidebar.success("License Status: ACTIVE ✅")
+    st.sidebar.success("License Status: ACTIVE ✅") # Confirmed status
     
     col1, col2 = st.columns(2)
     with col1:
@@ -71,36 +71,36 @@ if model and scaler:
         balance = st.number_input("Yearly Balance ($)", 0, 1000000, 250000)
     with col2:
         tenure = st.number_input("Relationship Tenure (Years)", 0, 50, 8)
+        # Informational only to maintain 3-feature model compatibility
         _ref_day = st.slider("Reference Day (Info Only)", 1, 31, 15)
 
     if st.button("Generate AI Decision"):
         try:
-            # Fixed input for 3 features only to match model requirement
-            input_data = np.array([[age, balance, tenure]])
-            scaled_data = scaler.transform(input_data)
+            # Strictly using 3 features to avoid Scaler shape errors
+            input_array = np.array([[age, balance, tenure]])
+            scaled_input = scaler.transform(input_array)
             
-            prediction = model.predict(scaled_data)
-            probs = model.predict_proba(scaled_data)[0]
+            prediction = model.predict(scaled_input)
+            probs = model.predict_proba(scaled_input)[0]
             confidence = max(probs) * 100
             
             st.markdown("---")
-            final_result = "ELIGIBLE" if prediction[0] == 1 else "NOT ELIGIBLE"
+            assessment = "ELIGIBLE" if prediction[0] == 1 else "NOT ELIGIBLE"
             
             if prediction[0] == 1:
-                st.success(f"Result: {final_result} | Confidence: {confidence:.2f}%")
+                st.success(f"Result: {assessment} | Confidence: {confidence:.2f}%")
             else:
-                st.warning(f"Result: {final_result} | Confidence: {confidence:.2f}%")
+                st.warning(f"Result: {assessment} | Confidence: {confidence:.2f}%")
             
-            st.progress(confidence / 100)
+            st.progress(confidence / 100) # Confidence visualization
 
-            # PDF Download Button
-            pdf_bytes = generate_pdf(age, balance, tenure, final_result, confidence)
+            # Triggering the PDF report download
+            pdf_out = create_assessment_report(age, balance, tenure, assessment, confidence)
             st.download_button(
                 label="📥 Download PDF Report",
-                data=pdf_bytes,
-                file_name=f"Report_{age}_{balance}.pdf",
+                data=pdf_out,
+                file_name=f"Report_{age}.pdf",
                 mime="application/pdf"
             )
-            
         except Exception as e:
-            st.error(f"Prediction Error: {e}")
+            st.error(f"Assessment Error: {e}")
