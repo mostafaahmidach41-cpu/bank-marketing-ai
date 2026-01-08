@@ -2,87 +2,105 @@ import streamlit as st
 import pickle
 import numpy as np
 from supabase import create_client
+from fpdf import FPDF
 
-# Clear cache to ensure fresh assets are loaded
-st.cache_resource.clear()
-
-# --- 1. SUPABASE SETUP ---
+# --- 1. SUPABASE CONFIGURATION ---
+# The verified working URL
 URL = "https://ixwvplxnfndjbmdsvdpu.supabase.co"
 KEY = "sb_publishable_666yE2Qkv09Y5NQ_QlQaEg_L8fneOgL"
 supabase = create_client(URL, KEY)
 
-# --- 2. SECURE AUTHENTICATION ---
+# --- 2. AUTHENTICATION SYSTEM ---
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
 
 if not st.session_state.authenticated:
     st.title("🛡️ Enterprise Security Portal")
-    user_key = st.text_input("Enter License Key", type="password", help="Example: PREMIUM-BANK-2026")
+    # Using strip() to ensure no accidental spaces break the check
+    user_key = st.text_input("License Key", type="password").strip()
     
-    if st.button("Activate System"):
+    if st.button("Activate"):
         try:
-            # Cleaning the input to prevent matching errors
-            clean_key = user_key.strip()
-            res = supabase.table("licenses").select("*").eq("key_value", clean_key).eq("is_active", True).execute()
-            
-            if len(res.data) > 0:
+            # Checking against the licenses table
+            res = supabase.table("licenses").select("*").eq("key_value", user_key).eq("is_active", True).execute()
+            if res.data and len(res.data) > 0:
                 st.session_state.authenticated = True
-                st.success("Authentication Successful!")
+                st.success("System Activated Successfully!")
                 st.rerun()
             else:
-                st.error("Access Denied: Invalid or Expired License Key.")
+                st.error("Invalid or Expired License Key.")
         except Exception as e:
-            st.error(f"Supabase Connection Error: {e}")
+            st.error(f"Connection Error: {e}")
     st.stop()
 
-# --- 3. AI ENGINE (Fixed for 3 Features) ---
+# --- 3. PDF GENERATION ENGINE ---
+def generate_pdf(age, balance, tenure, result, confidence):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(200, 10, txt="AI Eligibility Assessment Report", ln=True, align='C')
+    pdf.ln(10)
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, txt=f"Customer Age: {age}", ln=True)
+    pdf.cell(200, 10, txt=f"Account Balance: ${balance:,}", ln=True)
+    pdf.cell(200, 10, txt=f"Tenure: {tenure} Years", ln=True)
+    pdf.ln(5)
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(200, 10, txt=f"Decision: {result}", ln=True)
+    pdf.cell(200, 10, txt=f"Model Confidence: {confidence:.2f}%", ln=True)
+    return pdf.output(dest='S').encode('latin-1')
+
+# --- 4. MAIN ASSESSMENT TERMINAL ---
 @st.cache_resource
-def load_model_and_scaler():
+def load_assets():
     try:
         with open("model.pkl", "rb") as f: model = pickle.load(f)
         with open("scaler.pkl", "rb") as f: scaler = pickle.load(f)
         return model, scaler
-    except Exception as e:
-        st.error(f"Critical Asset Error: {e}")
-        return None, None
+    except: return None, None
 
-model, scaler = load_model_and_scaler()
+model, scaler = load_assets()
 
 if model and scaler:
     st.title("Customer AI Assessment Terminal")
-    st.sidebar.success("License: ACTIVE ✅")
+    st.sidebar.success("License Status: ACTIVE ✅")
     
-    # Strictly defining only the 3 expected features
     col1, col2 = st.columns(2)
     with col1:
         age = st.slider("Customer Age", 18, 95, 35)
         balance = st.number_input("Yearly Balance ($)", 0, 1000000, 250000)
     with col2:
         tenure = st.number_input("Relationship Tenure (Years)", 0, 50, 8)
-        # Note: Day is collected but NOT used in the calculation to avoid error
-        _ = st.slider("Reference Day (System Info Only)", 1, 31, 15)
+        _ref_day = st.slider("Reference Day (Info Only)", 1, 31, 15)
 
     if st.button("Generate AI Decision"):
         try:
-            # This is the exact shape the Scaler expects
-            final_input = np.array([[age, balance, tenure]])
+            # Fixed input for 3 features only to match model requirement
+            input_data = np.array([[age, balance, tenure]])
+            scaled_data = scaler.transform(input_data)
             
-            # Transformation and Prediction
-            scaled_features = scaler.transform(final_input)
-            prediction = model.predict(scaled_features)
-            probabilities = model.predict_proba(scaled_features)[0]
-            confidence = max(probabilities) * 100
+            prediction = model.predict(scaled_data)
+            probs = model.predict_proba(scaled_data)[0]
+            confidence = max(probs) * 100
             
-            # Displaying Confidence Metric
             st.markdown("---")
-            if prediction[0] == 1:
-                st.success(f"Result: ELIGIBLE | Confidence: {confidence:.2f}%")
-            else:
-                st.warning(f"Result: NOT ELIGIBLE | Confidence: {confidence:.2f}%")
+            final_result = "ELIGIBLE" if prediction[0] == 1 else "NOT ELIGIBLE"
             
-            st.progress(confidence / 100) #
+            if prediction[0] == 1:
+                st.success(f"Result: {final_result} | Confidence: {confidence:.2f}%")
+            else:
+                st.warning(f"Result: {final_result} | Confidence: {confidence:.2f}%")
+            
+            st.progress(confidence / 100)
+
+            # PDF Download Button
+            pdf_bytes = generate_pdf(age, balance, tenure, final_result, confidence)
+            st.download_button(
+                label="📥 Download PDF Report",
+                data=pdf_bytes,
+                file_name=f"Report_{age}_{balance}.pdf",
+                mime="application/pdf"
+            )
             
         except Exception as e:
-            st.error(f"System Error: {e}")
-            st.info("Technical Note: Ensure model.pkl expects exactly 3 features.")
-
+            st.error(f"Prediction Error: {e}")
