@@ -5,7 +5,7 @@ from supabase import create_client, Client
 from fpdf import FPDF
 
 # --- 1. DATABASE CONNECTION ---
-# Verified Project URL and Publishable Key
+# Verified Project URL and Publishable Key from your Supabase settings
 URL = "https://ixwvplxnfndjbmdsvdpu.supabase.co"
 KEY = "sb_publishable_666yE2Qkv09Y5NQ_QlQaEg_L8fneOgL" 
 supabase: Client = create_client(URL, KEY)
@@ -18,14 +18,14 @@ if not st.session_state.authenticated:
     st.title("🛡️ Enterprise Security Portal")
     st.write("System activation required to access AI tools.")
     
-    # User enters the name they used during Stripe checkout
+    # User enters the name used during Stripe checkout
     user_key = st.text_input("Username / License Key", placeholder="Enter your registered name").strip()
     
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Activate System"):
             try:
-                # Querying the licenses table for an active entry
+                # Searching for the license in your Supabase table
                 res = supabase.table("licenses").select("*").eq("key_value", user_key).eq("is_active", True).execute()
                 if res.data and len(res.data) > 0:
                     st.session_state.authenticated = True
@@ -37,7 +37,7 @@ if not st.session_state.authenticated:
                 st.error(f"Authentication Failure: {e}")
     
     with col2:
-        # Direct link to your Stripe payment page
+        # Link to your Stripe test payment page
         payment_url = "https://buy.stripe.com/test_8x29ATe0ubQ06NX1qyfUQ00"
         st.markdown(f'''<a href="{payment_url}" target="_blank">
             <button style="width:100%; height:42px; background-color:#6772E5; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">
@@ -86,7 +86,7 @@ if model and scaler:
         balance = st.number_input("Yearly Balance ($)", 0, 1000000, 250000)
     with col2:
         tenure = st.number_input("Relationship Tenure (Years)", 0, 50, 8)
-        _info = st.info("Predicting based on Age, Balance, and Tenure.")
+        st.info("Predicting based on Age, Balance, and Tenure.")
 
     if st.button("Generate AI Decision"):
         try:
