@@ -5,9 +5,9 @@ from supabase import create_client, Client
 from fpdf import FPDF
 
 # --- 1. DATABASE CONNECTION ---
-# Using the verified project URL and Anon Key
+# Verified Project URL and Publishable Key
 URL = "https://ixwvplxnfndjbmdsvdpu.supabase.co"
-KEY = "YOUR_SUPABASE_ANON_KEY" # Replace with your actual Anon Key
+KEY = "sb_publishable_666yE2Qkv09Y5NQ_QlQaEg_L8fneOgL" 
 supabase: Client = create_client(URL, KEY)
 
 # --- 2. AUTHENTICATION LOGIC ---
