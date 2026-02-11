@@ -19,7 +19,7 @@ if "current_user" not in st.session_state:
 # --- Security Portal ---
 if not st.session_state.authenticated:
     st.set_page_config(page_title="Enterprise Security Portal", layout="centered")
-    st.title("🛡️ Enterprise Security Portal")
+    st.title("Enterprise Security Portal")
 
     user_input = st.text_input(
         "Username or License Key",
@@ -97,7 +97,7 @@ model, scaler = load_assets()
 
 if model and scaler:
     st.set_page_config(page_title="Customer AI Assessment Terminal", layout="wide")
-    st.title("🚀 Customer AI Assessment Terminal")
+    st.title("Customer AI Assessment Terminal")
 
     # --- Sidebar & Analytics Dashboard ---
     st.sidebar.info(f"Logged in as: {st.session_state.current_user}")
@@ -108,7 +108,7 @@ if model and scaler:
         st.rerun()
 
     st.sidebar.markdown("---")
-    st.sidebar.subheader("📊 Live Analytics Dashboard")
+    st.sidebar.subheader("Live Analytics Dashboard")
 
     try:
         # Fetch Stats from Supabase
@@ -174,7 +174,7 @@ if model and scaler:
             # 3. Generate PDF
             pdf_data = create_assessment_report(age, balance, tenure, decision, confidence)
             st.download_button(
-                label="📥 Download Official PDF Report",
+                label="Download Official PDF Report",
                 data=pdf_data,
                 file_name=f"Assessment_{st.session_state.current_user}_{datetime.date.today()}.pdf",
                 mime="application/pdf",
