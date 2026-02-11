@@ -5,12 +5,12 @@ from supabase import create_client, Client
 from fpdf import FPDF
 import datetime
 
-# Supabase configuration
+# --- Supabase configuration ---
 URL = "https://ixwvplxnfndjbmdsvdpu.supabase.co"
 KEY = "sb_publishable_666yE2Qkv09Y5NQ_QlQaEg_L8fneOgL"
 supabase: Client = create_client(URL, KEY)
 
-# Session state management
+# --- Session state management ---
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "current_user" not in st.session_state:
@@ -19,7 +19,7 @@ if "current_user" not in st.session_state:
 # --- Security Portal ---
 if not st.session_state.authenticated:
     st.set_page_config(page_title="Enterprise Security Portal", layout="centered")
-    st.title("Enterprise Security Portal")
+    st.title("🛡️ Enterprise Security Portal")
 
     user_input = st.text_input(
         "Username or License Key",
@@ -97,15 +97,39 @@ model, scaler = load_assets()
 
 if model and scaler:
     st.set_page_config(page_title="Customer AI Assessment Terminal", layout="wide")
-    st.title("Customer AI Assessment Terminal")
+    st.title("🚀 Customer AI Assessment Terminal")
 
-    # Sidebar
+    # --- Sidebar & Analytics Dashboard ---
     st.sidebar.info(f"Logged in as: {st.session_state.current_user}")
+    
+    # Logout Button
     if st.sidebar.button("Logout", use_container_width=True):
         st.session_state.authenticated = False
         st.rerun()
 
-    # Input fields
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📊 Live Analytics Dashboard")
+
+    try:
+        # Fetch Stats from Supabase
+        stats_res = supabase.table("audit_logs").select("id", count="exact").execute()
+        total_checks = stats_res.count if stats_res.count else 0
+        
+        eligible_res = supabase.table("audit_logs").select("id", count="exact").eq("decision", "ELIGIBLE").execute()
+        eligible_checks = eligible_res.count if eligible_res.count else 0
+
+        # Display Metrics
+        st.sidebar.metric("Total Assessments", total_checks)
+        st.sidebar.metric("Total Eligible", eligible_checks)
+        
+        if total_checks > 0:
+            rate = (eligible_checks / total_checks) * 100
+            st.sidebar.write(f"Acceptance Rate: {rate:.1f}%")
+            st.sidebar.progress(rate / 100)
+    except Exception:
+        st.sidebar.warning("Analytics temporarily unavailable")
+
+    # --- Input fields ---
     col1, col2 = st.columns(2)
 
     with col1:
@@ -116,19 +140,18 @@ if model and scaler:
         tenure = st.number_input("Relationship Tenure (Years)", 0, 50, 8)
         st.info("AI analysis considers financial stability and loyalty metrics.")
 
-    # Decision processing
+    # --- Decision processing ---
     if st.button("Generate AI Decision", use_container_width=True):
         try:
+            # Predict
             features = np.array([[age, balance, tenure]])
             scaled = scaler.transform(features)
-
             prediction = model.predict(scaled)
             probabilities = model.predict_proba(scaled)[0]
             confidence = max(probabilities) * 100
-
             decision = "ELIGIBLE" if prediction[0] == 1 else "NOT ELIGIBLE"
 
-            # Audit log
+            # 1. Audit log entry
             audit_entry = {
                 "license_key": st.session_state.current_user,
                 "customer_age": age,
@@ -137,12 +160,10 @@ if model and scaler:
                 "decision": decision,
                 "confidence": float(confidence)
             }
-
             supabase.table("audit_logs").insert(audit_entry).execute()
 
-            # Display results
+            # 2. Display results
             st.markdown("---")
-
             if prediction[0] == 1:
                 st.success(f"Result: {decision} | Confidence: {confidence:.2f}%")
             else:
@@ -150,18 +171,18 @@ if model and scaler:
 
             st.progress(confidence / 100)
 
-            # Generate PDF
-            pdf_data = create_assessment_report(
-                age, balance, tenure, decision, confidence
-            )
-
+            # 3. Generate PDF
+            pdf_data = create_assessment_report(age, balance, tenure, decision, confidence)
             st.download_button(
-                label="Download Official PDF Report",
+                label="📥 Download Official PDF Report",
                 data=pdf_data,
                 file_name=f"Assessment_{st.session_state.current_user}_{datetime.date.today()}.pdf",
                 mime="application/pdf",
                 use_container_width=True
             )
+            
+            # Auto-refresh stats by rerunning
+            st.rerun()
 
         except Exception as e:
             st.error(f"System Error: {e}")
