@@ -4,7 +4,8 @@ import numpy as np
 from supabase import create_client, Client
 from fpdf import FPDF
 import datetime
-import matplotlib.pyplot as plt
+import plotly.express as px
+import pandas as pd
 
 # --- Supabase configuration ---
 URL = "https://ixwvplxnfndjbmdsvdpu.supabase.co"
@@ -82,42 +83,26 @@ if model and scaler:
     st.sidebar.subheader("📊 Performance Analytics")
 
     try:
-        # Fetch all audit logs for deeper analysis
         response = supabase.table("audit_logs").select("decision, balance").execute()
-        data = response.data
-
-        if data:
-            total_checks = len(data)
-            eligible_data = [d['balance'] for d in data if d['decision'] == 'ELIGIBLE']
-            not_eligible_data = [d['balance'] for d in data if d['decision'] != 'ELIGIBLE']
+        if response.data:
+            df = pd.DataFrame(response.data)
             
             # 1. Pie Chart: Eligibility Distribution
-            fig1, ax1 = plt.subplots(figsize=(4, 4))
-            ax1.pie([len(eligible_data), len(not_eligible_data)], 
-                    labels=['Eligible', 'Not Eligible'], 
-                    autopct='%1.1f%%', startangle=90, 
-                    colors=['#2ecc71', '#e74c3c'], textprops={'color':"w"})
-            ax1.set_title("Eligibility Rate", color="white")
-            fig1.patch.set_alpha(0)
-            st.sidebar.pyplot(fig1)
+            fig_pie = px.pie(df, names='decision', title='Eligibility Rate',
+                             color='decision', color_discrete_map={'ELIGIBLE':'#2ecc71', 'NOT ELIGIBLE':'#e74c3c'})
+            fig_pie.update_layout(showlegend=False, height=250, margin=dict(t=30, b=0, l=0, r=0))
+            st.sidebar.plotly_chart(fig_pie, use_container_width=True)
 
             # 2. Bar Chart: Average Balance Comparison
-            avg_eligible = np.mean(eligible_data) if eligible_data else 0
-            avg_not_eligible = np.mean(not_eligible_data) if not_eligible_data else 0
+            avg_balance = df.groupby('decision')['balance'].mean().reset_index()
+            fig_bar = px.bar(avg_balance, x='decision', y='balance', title='Avg Balance ($)',
+                             color='decision', color_discrete_map={'ELIGIBLE':'#2ecc71', 'NOT ELIGIBLE':'#e74c3c'})
+            fig_bar.update_layout(showlegend=False, height=250, margin=dict(t=30, b=0, l=0, r=0))
+            st.sidebar.plotly_chart(fig_bar, use_container_width=True)
             
-            fig2, ax2 = plt.subplots(figsize=(4, 4))
-            ax2.bar(['Eligible', 'Not Eligible'], [avg_eligible, avg_not_eligible], color=['#2ecc71', '#e74c3c'])
-            ax2.set_title("Avg Balance Comparison ($)", color="white")
-            ax2.tick_params(axis='x', colors='white')
-            ax2.tick_params(axis='y', colors='white')
-            fig2.patch.set_alpha(0)
-            st.sidebar.pyplot(fig2)
-            
-            st.sidebar.metric("Total Assessments", total_checks)
-        else:
-            st.sidebar.info("No assessment data available yet.")
-    except Exception as e:
-        st.sidebar.warning(f"Analytics error: {e}")
+            st.sidebar.metric("Total Assessments", len(df))
+    except Exception:
+        st.sidebar.warning("Charts loading...")
 
     # --- Input fields ---
     col1, col2 = st.columns(2)
@@ -137,18 +122,20 @@ if model and scaler:
             probabilities = model.predict_proba(scaled)[0]
             confidence = max(probabilities) * 100
             decision = "ELIGIBLE" if prediction[0] == 1 else "NOT ELIGIBLE"
-
             st.session_state.last_result = {"age": age, "balance": balance, "tenure": tenure, "decision": decision, "confidence": confidence}
             
             audit_entry = {"license_key": st.session_state.current_user, "customer_age": age, "balance": float(balance), "tenure": tenure, "decision": decision, "confidence": float(confidence)}
             supabase.table("audit_logs").insert(audit_entry).execute()
-
-            st.markdown("---")
-            if prediction[0] == 1: st.success(f"Result: {decision} | Confidence: {confidence:.2f}%")
-            else: st.warning(f"Result: {decision} | Confidence: {confidence:.2f}%")
-            st.progress(confidence / 100)
             st.rerun()
-        except Exception as e: st.error(f"System Error: {e}")
+        except Exception as e: st.error(f"Processing Error: {e}")
+
+    # Results Display
+    if st.session_state.last_result:
+        res = st.session_state.last_result
+        st.markdown("---")
+        if res['decision'] == "ELIGIBLE": st.success(f"Result: {res['decision']} | Confidence: {res['confidence']:.2f}%")
+        else: st.warning(f"Result: {res['decision']} | Confidence: {res['confidence']:.2f}%")
+        st.progress(res['confidence'] / 100)
 
     # --- Permanent PDF Download Section ---
     st.markdown("---")
@@ -156,7 +143,7 @@ if model and scaler:
     if st.session_state.last_result:
         res = st.session_state.last_result
         pdf_data = create_assessment_report(res['age'], res['balance'], res['tenure'], res['decision'], res['confidence'])
-        st.download_button(label="Download Official PDF Report", data=pdf_data, file_name=f"Assessment_{st.session_state.current_user}_{datetime.date.today()}.pdf", mime="application/pdf", use_container_width=True)
+        st.download_button(label="Download Official PDF Report", data=pdf_data, file_name=f"Assessment_{datetime.date.today()}.pdf", mime="application/pdf", use_container_width=True)
     else:
         st.info("Please generate an AI Decision first to enable the PDF report download.")
 else:
