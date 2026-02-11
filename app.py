@@ -82,25 +82,26 @@ if model and scaler:
     st.sidebar.markdown("---")
     st.sidebar.subheader("📊 Performance Analytics")
 
+    all_data_df = pd.DataFrame() # To be used later in the logs
     try:
-        response = supabase.table("audit_logs").select("decision, balance").execute()
+        response = supabase.table("audit_logs").select("*").order("created_at", desc=True).execute()
         if response.data:
-            df = pd.DataFrame(response.data)
+            all_data_df = pd.DataFrame(response.data)
             
-            # 1. Pie Chart: Eligibility Distribution
-            fig_pie = px.pie(df, names='decision', title='Eligibility Rate',
+            # 1. Pie Chart
+            fig_pie = px.pie(all_data_df, names='decision', title='Eligibility Rate',
                              color='decision', color_discrete_map={'ELIGIBLE':'#2ecc71', 'NOT ELIGIBLE':'#e74c3c'})
-            fig_pie.update_layout(showlegend=False, height=250, margin=dict(t=30, b=0, l=0, r=0))
+            fig_pie.update_layout(showlegend=False, height=220, margin=dict(t=30, b=0, l=0, r=0))
             st.sidebar.plotly_chart(fig_pie, use_container_width=True)
 
-            # 2. Bar Chart: Average Balance Comparison
-            avg_balance = df.groupby('decision')['balance'].mean().reset_index()
+            # 2. Bar Chart
+            avg_balance = all_data_df.groupby('decision')['balance'].mean().reset_index()
             fig_bar = px.bar(avg_balance, x='decision', y='balance', title='Avg Balance ($)',
                              color='decision', color_discrete_map={'ELIGIBLE':'#2ecc71', 'NOT ELIGIBLE':'#e74c3c'})
-            fig_bar.update_layout(showlegend=False, height=250, margin=dict(t=30, b=0, l=0, r=0))
+            fig_bar.update_layout(showlegend=False, height=220, margin=dict(t=30, b=0, l=0, r=0))
             st.sidebar.plotly_chart(fig_bar, use_container_width=True)
             
-            st.sidebar.metric("Total Assessments", len(df))
+            st.sidebar.metric("Total Assessments", len(all_data_df))
     except Exception:
         st.sidebar.warning("Charts loading...")
 
@@ -137,9 +138,26 @@ if model and scaler:
         else: st.warning(f"Result: {res['decision']} | Confidence: {res['confidence']:.2f}%")
         st.progress(res['confidence'] / 100)
 
+    # --- NEW: Recent Activity Log Table ---
+    st.markdown("---")
+    st.subheader("📜 Recent Activity Log (Last 5 Assessments)")
+    if not all_data_df.empty:
+        # Select and rename columns for display
+        log_display = all_data_df[['customer_age', 'balance', 'tenure', 'decision', 'confidence']].head(5)
+        log_display.columns = ['Age', 'Balance ($)', 'Tenure (Y)', 'Decision', 'Confidence (%)']
+        
+        # Apply styling to the dataframe
+        def style_decision(val):
+            color = '#2ecc71' if val == 'ELIGIBLE' else '#e74c3c'
+            return f'color: {color}; font-weight: bold'
+
+        st.table(log_display.style.applymap(style_decision, subset=['Decision']).format({'Balance ($)': '{:,.0f}', 'Confidence (%)': '{:.2f}'}))
+    else:
+        st.info("No activity logs found.")
+
     # --- Permanent PDF Download Section ---
     st.markdown("---")
-    st.subheader("Reporting Section")
+    st.subheader("📄 Reporting Section")
     if st.session_state.last_result:
         res = st.session_state.last_result
         pdf_data = create_assessment_report(res['age'], res['balance'], res['tenure'], res['decision'], res['confidence'])
