@@ -3,16 +3,20 @@ import pickle
 import numpy as np
 from supabase import create_client, Client
 from fpdf import FPDF
+import datetime
 
+# Supabase configuration
 URL = "https://ixwvplxnfndjbmdsvdpu.supabase.co"
 KEY = "sb_publishable_666yE2Qkv09Y5NQ_QlQaEg_L8fneOgL"
 supabase: Client = create_client(URL, KEY)
 
+# Session state management
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "current_user" not in st.session_state:
     st.session_state.current_user = ""
 
+# --- Security Portal ---
 if not st.session_state.authenticated:
     st.set_page_config(page_title="Enterprise Security Portal", layout="centered")
     st.title("Enterprise Security Portal")
@@ -22,7 +26,7 @@ if not st.session_state.authenticated:
         placeholder="Enter registered license key"
     ).strip()
 
-    if st.button("Activate System"):
+    if st.button("Activate System", use_container_width=True):
         try:
             res = (
                 supabase
@@ -32,6 +36,7 @@ if not st.session_state.authenticated:
                 .eq("is_active", True)
                 .execute()
             )
+
             if res.data and len(res.data) > 0:
                 st.session_state.authenticated = True
                 st.session_state.current_user = user_input
@@ -39,10 +44,13 @@ if not st.session_state.authenticated:
                 st.rerun()
             else:
                 st.error("Invalid or inactive license")
+
         except Exception as e:
             st.error(f"Authentication error: {e}")
+
     st.stop()
 
+# --- Helper Functions ---
 def create_assessment_report(age, balance, tenure, result, confidence):
     pdf = FPDF()
     pdf.add_page()
@@ -60,7 +68,17 @@ def create_assessment_report(age, balance, tenure, result, confidence):
     pdf.cell(200, 10, f"Decision: {result}", ln=True)
     pdf.cell(200, 10, f"Confidence: {confidence:.2f}%", ln=True)
 
+    pdf.ln(10)
+    pdf.set_font("Arial", "I", 8)
+    pdf.cell(
+        200,
+        10,
+        f"Generated on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        ln=True
+    )
+
     return pdf.output(dest="S").encode("latin-1")
+
 
 @st.cache_resource
 def load_assets():
@@ -73,26 +91,33 @@ def load_assets():
     except Exception:
         return None, None
 
+
+# --- Main Application ---
 model, scaler = load_assets()
 
 if model and scaler:
     st.set_page_config(page_title="Customer AI Assessment Terminal", layout="wide")
     st.title("Customer AI Assessment Terminal")
 
-    st.sidebar.success(f"License: {st.session_state.current_user}")
-    if st.sidebar.button("Logout"):
+    # Sidebar
+    st.sidebar.info(f"Logged in as: {st.session_state.current_user}")
+    if st.sidebar.button("Logout", use_container_width=True):
         st.session_state.authenticated = False
         st.rerun()
 
+    # Input fields
     col1, col2 = st.columns(2)
+
     with col1:
         age = st.slider("Customer Age", 18, 95, 35)
         balance = st.number_input("Yearly Balance ($)", 0, 1_000_000, 250_000)
+
     with col2:
         tenure = st.number_input("Relationship Tenure (Years)", 0, 50, 8)
-        st.info("Prediction uses age, balance, and tenure")
+        st.info("AI analysis considers financial stability and loyalty metrics.")
 
-    if st.button("Generate AI Decision"):
+    # Decision processing
+    if st.button("Generate AI Decision", use_container_width=True):
         try:
             features = np.array([[age, balance, tenure]])
             scaled = scaler.transform(features)
@@ -103,7 +128,21 @@ if model and scaler:
 
             decision = "ELIGIBLE" if prediction[0] == 1 else "NOT ELIGIBLE"
 
+            # Audit log
+            audit_entry = {
+                "license_key": st.session_state.current_user,
+                "customer_age": age,
+                "balance": float(balance),
+                "tenure": tenure,
+                "decision": decision,
+                "confidence": float(confidence)
+            }
+
+            supabase.table("audit_logs").insert(audit_entry).execute()
+
+            # Display results
             st.markdown("---")
+
             if prediction[0] == 1:
                 st.success(f"Result: {decision} | Confidence: {confidence:.2f}%")
             else:
@@ -111,19 +150,21 @@ if model and scaler:
 
             st.progress(confidence / 100)
 
+            # Generate PDF
             pdf_data = create_assessment_report(
-                age,
-                balance,
-                tenure,
-                decision,
-                confidence
+                age, balance, tenure, decision, confidence
             )
 
             st.download_button(
-                label="Download PDF Report",
+                label="Download Official PDF Report",
                 data=pdf_data,
-                file_name=f"Report_{st.session_state.current_user}.pdf",
-                mime="application/pdf"
+                file_name=f"Assessment_{st.session_state.current_user}_{datetime.date.today()}.pdf",
+                mime="application/pdf",
+                use_container_width=True
             )
+
         except Exception as e:
-            st.error(f"Assessment error: {e}")
+            st.error(f"System Error: {e}")
+
+else:
+    st.error("Critical Failure: AI Assets (Model/Scaler) not found.")
