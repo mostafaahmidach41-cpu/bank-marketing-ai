@@ -82,7 +82,7 @@ if model and scaler:
     st.sidebar.markdown("---")
     st.sidebar.subheader("📊 Performance Analytics")
 
-    all_data_df = pd.DataFrame() # To be used later in the logs
+    all_data_df = pd.DataFrame()
     try:
         response = supabase.table("audit_logs").select("*").order("created_at", desc=True).execute()
         if response.data:
@@ -102,6 +102,18 @@ if model and scaler:
             st.sidebar.plotly_chart(fig_bar, use_container_width=True)
             
             st.sidebar.metric("Total Assessments", len(all_data_df))
+
+            # --- NEW: Export CSV Feature in Sidebar ---
+            st.sidebar.markdown("---")
+            st.sidebar.subheader("📥 Data Export")
+            csv_data = all_data_df.to_csv(index=False).encode('utf-8')
+            st.sidebar.download_button(
+                label="Download Full Log (CSV)",
+                data=csv_data,
+                file_name=f"Full_Audit_Log_{datetime.date.today()}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
     except Exception:
         st.sidebar.warning("Charts loading...")
 
@@ -138,15 +150,13 @@ if model and scaler:
         else: st.warning(f"Result: {res['decision']} | Confidence: {res['confidence']:.2f}%")
         st.progress(res['confidence'] / 100)
 
-    # --- NEW: Recent Activity Log Table ---
+    # Recent Activity Log Table
     st.markdown("---")
     st.subheader("📜 Recent Activity Log (Last 5 Assessments)")
     if not all_data_df.empty:
-        # Select and rename columns for display
         log_display = all_data_df[['customer_age', 'balance', 'tenure', 'decision', 'confidence']].head(5)
         log_display.columns = ['Age', 'Balance ($)', 'Tenure (Y)', 'Decision', 'Confidence (%)']
         
-        # Apply styling to the dataframe
         def style_decision(val):
             color = '#2ecc71' if val == 'ELIGIBLE' else '#e74c3c'
             return f'color: {color}; font-weight: bold'
@@ -155,7 +165,7 @@ if model and scaler:
     else:
         st.info("No activity logs found.")
 
-    # --- Permanent PDF Download Section ---
+    # Reporting Section
     st.markdown("---")
     st.subheader("📄 Reporting Section")
     if st.session_state.last_result:
