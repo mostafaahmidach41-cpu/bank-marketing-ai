@@ -15,11 +15,14 @@ if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "current_user" not in st.session_state:
     st.session_state.current_user = ""
+# Initialize last assessment results to keep the button functional
+if "last_result" not in st.session_state:
+    st.session_state.last_result = None
 
 # --- Security Portal ---
 if not st.session_state.authenticated:
     st.set_page_config(page_title="Enterprise Security Portal", layout="centered")
-    st.title("Enterprise Security Portal")
+    st.title("🛡️ Enterprise Security Portal")
 
     user_input = st.text_input(
         "Username or License Key",
@@ -97,28 +100,25 @@ model, scaler = load_assets()
 
 if model and scaler:
     st.set_page_config(page_title="Customer AI Assessment Terminal", layout="wide")
-    st.title("Customer AI Assessment Terminal")
+    st.title("🚀 Customer AI Assessment Terminal")
 
     # --- Sidebar & Analytics Dashboard ---
     st.sidebar.info(f"Logged in as: {st.session_state.current_user}")
     
-    # Logout Button
     if st.sidebar.button("Logout", use_container_width=True):
         st.session_state.authenticated = False
         st.rerun()
 
     st.sidebar.markdown("---")
-    st.sidebar.subheader("Live Analytics Dashboard")
+    st.sidebar.subheader("📊 Live Analytics Dashboard")
 
     try:
-        # Fetch Stats from Supabase
         stats_res = supabase.table("audit_logs").select("id", count="exact").execute()
         total_checks = stats_res.count if stats_res.count else 0
         
         eligible_res = supabase.table("audit_logs").select("id", count="exact").eq("decision", "ELIGIBLE").execute()
         eligible_checks = eligible_res.count if eligible_res.count else 0
 
-        # Display Metrics
         st.sidebar.metric("Total Assessments", total_checks)
         st.sidebar.metric("Total Eligible", eligible_checks)
         
@@ -143,7 +143,6 @@ if model and scaler:
     # --- Decision processing ---
     if st.button("Generate AI Decision", use_container_width=True):
         try:
-            # Predict
             features = np.array([[age, balance, tenure]])
             scaled = scaler.transform(features)
             prediction = model.predict(scaled)
@@ -151,7 +150,15 @@ if model and scaler:
             confidence = max(probabilities) * 100
             decision = "ELIGIBLE" if prediction[0] == 1 else "NOT ELIGIBLE"
 
-            # 1. Audit log entry
+            # Save result to session state for PDF generation
+            st.session_state.last_result = {
+                "age": age,
+                "balance": balance,
+                "tenure": tenure,
+                "decision": decision,
+                "confidence": confidence
+            }
+
             audit_entry = {
                 "license_key": st.session_state.current_user,
                 "customer_age": age,
@@ -162,7 +169,6 @@ if model and scaler:
             }
             supabase.table("audit_logs").insert(audit_entry).execute()
 
-            # 2. Display results
             st.markdown("---")
             if prediction[0] == 1:
                 st.success(f"Result: {decision} | Confidence: {confidence:.2f}%")
@@ -170,22 +176,32 @@ if model and scaler:
                 st.warning(f"Result: {decision} | Confidence: {confidence:.2f}%")
 
             st.progress(confidence / 100)
-
-            # 3. Generate PDF
-            pdf_data = create_assessment_report(age, balance, tenure, decision, confidence)
-            st.download_button(
-                label="Download Official PDF Report",
-                data=pdf_data,
-                file_name=f"Assessment_{st.session_state.current_user}_{datetime.date.today()}.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
             
-            # Auto-refresh stats by rerunning
             st.rerun()
 
         except Exception as e:
             st.error(f"System Error: {e}")
+
+    # --- Permanent PDF Download Section ---
+    st.markdown("---")
+    st.subheader("Reporting Section")
+    
+    if st.session_state.last_result:
+        # Generate data from the last assessment stored in session state
+        res = st.session_state.last_result
+        pdf_data = create_assessment_report(res['age'], res['balance'], res['tenure'], res['decision'], res['confidence'])
+        
+        st.download_button(
+            label="Download Official PDF Report",
+            data=pdf_data,
+            file_name=f"Assessment_{st.session_state.current_user}_{datetime.date.today()}.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
+    else:
+        # Show a disabled-looking button or info if no assessment has been done yet
+        st.info("Please generate an AI Decision first to enable the PDF report download.")
+        st.button("Download Official PDF Report (Disabled)", disabled=True, use_container_width=True)
 
 else:
     st.error("Critical Failure: AI Assets (Model/Scaler) not found.")
