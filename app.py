@@ -9,11 +9,12 @@ import pandas as pd
 import os
 
 # --- Secure Configuration ---
+# Fetching from Streamlit Secrets for production safety
 URL = "https://ixwvplxnfndjbmdsvdpu.supabase.co"
-KEY = os.getenv("SUPABASE_KEY")
-
-if not KEY:
-    st.error("Missing SUPABASE_KEY. Please set it in Streamlit Secrets.")
+try:
+    KEY = st.secrets["SUPABASE_KEY"]
+except:
+    st.error("Missing SUPABASE_KEY in Secrets.")
     st.stop()
 
 supabase: Client = create_client(URL, KEY)
@@ -29,28 +30,29 @@ if not st.session_state.auth_user:
     st.set_page_config(page_title="SaaS Banking AI Login", layout="centered")
     st.title("🔐 Enterprise AI Portal")
     
+    # Tabs for modern SaaS Login/Signup flow
     tab1, tab2 = st.tabs(["Sign In", "Register"])
     
     with tab1:
-        email = st.text_input("Email")
-        pw = st.text_input("Password", type="password")
+        email = st.text_input("Email", key="login_email")
+        pw = st.text_input("Password", type="password", key="login_pw")
         if st.button("Access System", use_container_width=True):
             try:
-                # Login using Supabase Auth
+                # Supabase Auth integration as configured in your dashboard
                 res = supabase.auth.sign_in_with_password({"email": email, "password": pw})
                 st.session_state.auth_user = res.user
                 st.rerun()
-            except Exception as e:
-                st.error("Invalid credentials. Please try again.")
+            except Exception:
+                st.error("Authentication failed. Check credentials or email verification.")
     
     with tab2:
-        new_email = st.text_input("Corporate Email")
-        new_pw = st.text_input("Create Password", type="password")
+        new_email = st.text_input("Corporate Email", key="reg_email")
+        new_pw = st.text_input("Create Password", type="password", key="reg_pw")
         if st.button("Create SaaS Account", use_container_width=True):
             try:
-                # Sign up using Supabase Auth
+                # Signup logic linked to your Auth Providers
                 supabase.auth.sign_up({"email": new_email, "password": new_pw})
-                st.success("Account created! Check your email for verification.")
+                st.success("Account created! Verify your email to continue.")
             except Exception as e:
                 st.error(f"Registration failed: {e}")
     st.stop()
@@ -91,25 +93,25 @@ if model and scaler:
     st.set_page_config(page_title="Banking AI Terminal", layout="wide")
     current_user_email = st.session_state.auth_user.email
     
-    # --- Sidebar & Multi-tenant Analytics ---
-    st.sidebar.info(f"Account: {current_user_email}")
+    # --- Sidebar & Data Isolation ---
+    st.sidebar.info(f"Active Session: {current_user_email}")
     if st.sidebar.button("Logout", use_container_width=True):
         supabase.auth.sign_out()
         st.session_state.auth_user = None
         st.rerun()
 
-    # Data Isolation: Query ONLY the current user's data
+    # Query strictly isolated to the logged-in user's email
     response = supabase.table("audit_logs").select("*").eq("email", current_user_email).order("created_at", desc=True).execute()
     user_logs_df = pd.DataFrame(response.data) if response.data else pd.DataFrame()
 
     if not user_logs_df.empty:
         st.sidebar.markdown("---")
-        st.sidebar.subheader("📊 Your Analytics")
+        st.sidebar.subheader("📊 Personal Analytics")
         fig_pie = px.pie(user_logs_df, names="decision", color="decision", 
                          color_discrete_map={"ELIGIBLE": "#2ecc71", "NOT ELIGIBLE": "#e74c3c"})
         fig_pie.update_layout(showlegend=False, height=200, margin=dict(t=30, b=0, l=0, r=0))
         st.sidebar.plotly_chart(fig_pie, use_container_width=True)
-        st.sidebar.metric("Total Assessments", len(user_logs_df))
+        st.sidebar.metric("Your Total Assessments", len(user_logs_df))
 
     # --- Assessment Input ---
     st.title("🚀 Customer AI Assessment Terminal")
@@ -124,14 +126,13 @@ if model and scaler:
         conf = round(np.max(model.predict_proba(feats)) * 100, 2)
         decision = "ELIGIBLE" if pred == 1 else "NOT ELIGIBLE"
 
-        # Feature Importance Logic
         try: importances = model.feature_importances_
         except: importances = [0.4, 0.4, 0.2]
 
         st.session_state.last_result = {"age": age, "balance": balance, "tenure": tenure, 
                                         "decision": decision, "confidence": conf, "importances": importances}
 
-        # Save with Email for Isolation
+        # Logging with current email for multi-tenant isolation
         supabase.table("audit_logs").insert({
             "email": current_user_email, "customer_age": age, "balance": float(balance),
             "tenure": tenure, "decision": decision, "confidence": conf
@@ -153,7 +154,7 @@ if model and scaler:
             st.progress(res["confidence"] / 100)
 
         with col_imp:
-            st.write("🔍 **Feature Impact Analysis**")
+            st.write("🔍 **Why this decision? (Feature Impact)**")
             imp_df = pd.DataFrame({"Feature": ["Age", "Balance", "Tenure"], "Impact": res["importances"]}).sort_values(by="Impact")
             fig_imp = px.bar(imp_df, x="Impact", y="Feature", orientation="h", color="Impact", color_continuous_scale="Viridis")
             fig_imp.update_layout(height=180, margin=dict(t=0, b=0, l=0, r=0), coloraxis_showscale=False)
@@ -165,6 +166,8 @@ if model and scaler:
     if not user_logs_df.empty:
         log_view = user_logs_df[["customer_age", "balance", "tenure", "decision", "confidence"]].head(5)
         log_view.columns = ["Age", "Balance ($)", "Tenure (Y)", "Decision", "Confidence (%)"]
+        
+        # Color coding for ELIGIBLE (green) and NOT ELIGIBLE (red)
         st.table(log_view.style.applymap(lambda x: 'color: #2ecc71; font-weight: bold' if x == 'ELIGIBLE' else 'color: #e74c3c; font-weight: bold', subset=['Decision']))
 
         if st.session_state.last_result:
@@ -172,4 +175,4 @@ if model and scaler:
             st.download_button("Download Assessment PDF", pdf_bytes, f"Report_{current_user_email}.pdf", "application/pdf", use_container_width=True)
 
 else:
-    st.error("System Failure: ML Assets Missing.")
+    st.error("System Failure: AI Assets Missing.")
