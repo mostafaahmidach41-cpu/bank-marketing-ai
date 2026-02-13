@@ -29,7 +29,7 @@ if "last_result" not in st.session_state:
 # --- Security Portal ---
 if not st.session_state.authenticated:
     st.set_page_config(page_title="Enterprise Security Portal", layout="centered")
-    st.title("Enterprise Security Portal")
+    st.title("🛡️ Enterprise Security Portal")
 
     user_input = st.text_input(
         "Username or License Key",
@@ -107,9 +107,9 @@ model, scaler = load_assets()
 
 if model and scaler:
     st.set_page_config(page_title="AI Assessment Terminal", layout="wide")
-    st.title("Customer AI Assessment Terminal")
+    st.title("🚀 Customer AI Assessment Terminal")
 
-    # --- Multi-tenant Analytics (Data Isolation) ---
+    # --- Sidebar & Data Isolation ---
     st.sidebar.info(f"Identity: {st.session_state.current_user}")
 
     if st.sidebar.button("Logout", use_container_width=True):
@@ -132,7 +132,7 @@ if model and scaler:
             all_data_df = pd.DataFrame(response.data)
 
             st.sidebar.markdown("---")
-            st.sidebar.subheader("Your Org Analytics")
+            st.sidebar.subheader("📊 Org Analytics")
 
             fig_pie = px.pie(
                 all_data_df,
@@ -152,7 +152,7 @@ if model and scaler:
             )
 
             st.sidebar.plotly_chart(fig_pie, use_container_width=True)
-            st.sidebar.metric("Your Total Checks", len(all_data_df))
+            st.sidebar.metric("Total Assessments", len(all_data_df))
 
             csv_data = all_data_df.to_csv(index=False).encode("utf-8")
 
@@ -176,7 +176,7 @@ if model and scaler:
 
     with col2:
         tenure = st.number_input("Relationship Tenure (Years)", 0, 50, 9)
-        st.info("System isolated for: " + st.session_state.current_user)
+        st.info("Secure Session: " + st.session_state.current_user)
 
     # --- Decision Engine ---
     if st.button("Execute AI Analysis", use_container_width=True):
@@ -192,6 +192,7 @@ if model and scaler:
 
             decision = "ELIGIBLE" if prediction[0] == 1 else "NOT ELIGIBLE"
 
+            # Dynamic Feature Importance
             try:
                 importances = model.feature_importances_
             except AttributeError:
@@ -224,24 +225,35 @@ if model and scaler:
         except Exception as e:
             st.error(f"Core Error: {e}")
 
-    # --- Results & Explainability ---
+    # --- Results with Color Coding ---
     if st.session_state.last_result:
         res = st.session_state.last_result
-
         st.markdown("---")
-
+        
         c1, c2 = st.columns([1, 1])
 
         with c1:
+            # ✅ ELIGIBLE = Green Banner | NOT ELIGIBLE = Red Banner
             if res["decision"] == "ELIGIBLE":
-                st.success(f"Final Decision: {res['decision']}")
+                st.markdown(f"""
+                    <div style="background-color: #d4edda; color: #155724; padding: 20px; border-radius: 10px; border: 2px solid #c3e6cb; text-align: center;">
+                        <h2 style="margin: 0;">✅ Result: {res['decision']}</h2>
+                        <h4 style="margin: 5px 0 0 0;">Confidence Score: {res['confidence']}%</h4>
+                    </div>
+                """, unsafe_allow_html=True)
             else:
-                st.warning(f"Final Decision: {res['decision']}")
-
-            st.metric("Confidence Score", f"{res['confidence']}%")
+                st.markdown(f"""
+                    <div style="background-color: #f8d7da; color: #721c24; padding: 20px; border-radius: 10px; border: 2px solid #f5c6cb; text-align: center;">
+                        <h2 style="margin: 0;">❌ Result: {res['decision']}</h2>
+                        <h4 style="margin: 5px 0 0 0;">Confidence Score: {res['confidence']}%</h4>
+                    </div>
+                """, unsafe_allow_html=True)
+            
+            st.write("") 
+            st.progress(res["confidence"] / 100)
 
         with c2:
-            st.write("Feature Impact Analysis")
+            st.write("🔍 **Why this decision? (Feature Impact)**")
 
             imp_df = pd.DataFrame({
                 "Feature": ["Age", "Balance", "Tenure"],
@@ -254,11 +266,11 @@ if model and scaler:
                 y="Feature",
                 orientation="h",
                 color="Impact",
-                color_continuous_scale="Blues"
+                color_continuous_scale="Viridis"
             )
 
             fig_imp.update_layout(
-                height=160,
+                height=180,
                 margin=dict(t=0, b=0, l=0, r=0),
                 coloraxis_showscale=False
             )
@@ -267,15 +279,18 @@ if model and scaler:
 
     # --- Activity Log ---
     st.markdown("---")
-    st.subheader("Recent Records")
+    st.subheader("📜 Recent Activity Log")
 
     if not all_data_df.empty:
-        st.dataframe(
-            all_data_df[
-                ["customer_age", "balance", "tenure", "decision", "confidence"]
-            ].head(5),
-            use_container_width=True
-        )
+        log_display = all_data_df[["customer_age", "balance", "tenure", "decision", "confidence"]].head(5)
+        log_display.columns = ["Age", "Balance ($)", "Tenure (Y)", "Decision", "Confidence (%)"]
+        
+        # Table Styling for Rows
+        def color_decision(val):
+            color = '#2ecc71' if val == 'ELIGIBLE' else '#e74c3c'
+            return f'color: {color}; font-weight: bold'
+
+        st.table(log_display.style.applymap(color_decision, subset=['Decision']).format({'Balance ($)': '{:,.0f}', 'Confidence (%)': '{:.2f}'}))
 
     # --- PDF Reporting ---
     if st.session_state.last_result:
@@ -290,9 +305,9 @@ if model and scaler:
         )
 
         st.download_button(
-            "Download Secure PDF",
+            "Download Assessment PDF",
             pdf_data,
-            f"Report_{st.session_state.current_user}.pdf",
+            f"Assessment_{st.session_state.current_user}.pdf",
             "application/pdf",
             use_container_width=True
         )
