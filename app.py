@@ -3,105 +3,121 @@ import pickle
 import numpy as np
 from supabase import create_client, Client
 from fpdf import FPDF
-import pandas as pd
+import datetime
 import plotly.express as px
+import pandas as pd
 
-# --- 1. Page Configuration ---
-st.set_page_config(
-    page_title="Secure AI Terminal",
-    page_icon="🛡️",
-    layout="wide"
-)
-
-# --- 2. Secure Credentials from Secrets ---
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-
-# --- 3. FIX: Secure Client with Proper Header Support ---
-def get_user_client(license_key):
-    """
-    Creates a Supabase client that sends the license key in headers.
-    This fixes the AttributeError and matches your RLS logic.
-    """
-    custom_headers = {
-        "x-license-key": license_key,
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}"
-    }
-    # Using the standardized way to pass headers to avoid AttributeErrors
-    return create_client(SUPABASE_URL, SUPABASE_KEY, options={"headers": custom_headers})
-
-# --- 4. Session State & Auth ---
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-if "current_user" not in st.session_state:
-    st.session_state.current_user = ""
-
-if not st.session_state.authenticated:
-    st.title("🔐 Enterprise Portal")
-    license_input = st.text_input("Enter License Key", type="password")
-    if st.button("Login"):
-        # Simple verification check
-        check_client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        res = check_client.table("licenses").select("*").eq("key_value", license_input).eq("is_active", True).execute()
-        if res.data:
-            st.session_state.authenticated = True
-            st.session_state.current_user = license_input
-            st.rerun()
-        else:
-            st.error("Invalid License Key")
+# --- Secure Configuration ---
+# Direct fetching from Secrets to ensure stability
+URL = "https://ixwvplxnfndjbmdsvdpu.supabase.co"
+try:
+    KEY = st.secrets["SUPABASE_KEY"]
+except:
+    st.error("Missing SUPABASE_KEY in Secrets.")
     st.stop()
 
-# --- 5. Main Application Logic ---
-# Initialize the secure user client
-user_client = get_user_client(st.session_state.current_user)
+# Reverted to stable direct connection to fix AttributeError
+supabase: Client = create_client(URL, KEY)
 
-st.title("🚀 Customer AI Assessment")
+# --- Session Management ---
+if "auth_user" not in st.session_state:
+    st.session_state.auth_user = None
+if "last_result" not in st.session_state:
+    st.session_state.last_result = None
 
-with st.sidebar:
-    st.success("Premium Account Active")
-    st.caption(f"User: {st.session_state.current_user[:10]}...")
-    if st.button("Logout"):
-        st.session_state.authenticated = False
+# --- Authentication Portal ---
+if not st.session_state.auth_user:
+    st.set_page_config(page_title="SaaS AI Login", layout="centered")
+    st.title("🔐 Enterprise AI Portal")
+    
+    tab1, tab2 = st.tabs(["Sign In", "Register"])
+    
+    with tab1:
+        email = st.text_input("Email")
+        pw = st.text_input("Password", type="password")
+        if st.button("Access System", use_container_width=True):
+            try:
+                # Direct Supabase Auth
+                res = supabase.auth.sign_in_with_password({"email": email, "password": pw})
+                st.session_state.auth_user = res.user
+                st.rerun()
+            except Exception:
+                st.error("Authentication failed.")
+    
+    with tab2:
+        new_email = st.text_input("Corporate Email")
+        new_pw = st.text_input("Create Password", type="password")
+        if st.button("Create Account", use_container_width=True):
+            try:
+                supabase.auth.sign_up({"email": new_email, "password": new_pw})
+                st.success("Account created! Check your email.")
+            except Exception as e:
+                st.error(f"Failed: {e}")
+    st.stop()
+
+# --- Assets & UI ---
+@st.cache_resource
+def load_assets():
+    try:
+        with open("model.pkl", "rb") as f: model = pickle.load(f)
+        with open("scaler.pkl", "rb") as f: scaler = pickle.load(f)
+        return model, scaler
+    except: return None, None
+
+model, scaler = load_assets()
+
+if model and scaler:
+    st.set_page_config(page_title="Banking AI", layout="wide")
+    current_email = st.session_state.auth_user.email
+    
+    # Sidebar Info
+    st.sidebar.info(f"User: {current_email}")
+    if st.sidebar.button("Logout"):
+        supabase.auth.sign_out()
+        st.session_state.auth_user = None
         st.rerun()
 
-# Input Fields
-c1, c2 = st.columns(2)
-with c1:
-    age = st.number_input("Customer Age", 18, 100, 30)
-    balance = st.number_input("Balance (USD)", 0, 1000000, 5000)
-with c2:
-    tenure = st.slider("Tenure (Years)", 0, 50, 5)
+    # Manual Data Isolation (Safe & Proven)
+    response = supabase.table("audit_logs").select("*").eq("email", current_email).order("created_at", desc=True).execute()
+    user_logs = pd.DataFrame(response.data) if response.data else pd.DataFrame()
 
-if st.button("Run Neural Analysis", type="primary"):
-    # Logic for Prediction (Placeholder for your model)
-    decision = "ELIGIBLE" if balance > 10000 else "NOT ELIGIBLE"
-    confidence = 85.5
-    
-    try:
-        # Saving with the secure client
-        # Important: Ensure you added 'INSERT' permission to your RLS Policy!
-        user_client.table("audit_logs").insert({
-            "license_key": st.session_state.current_user,
-            "customer_age": age,
-            "balance": float(balance),
-            "tenure": tenure,
-            "decision": decision,
-            "confidence": confidence
-        }).execute()
-        st.success(f"Analysis Complete: {decision}")
-    except Exception as e:
-        st.error(f"Security Policy Block: {e}")
+    # Main Terminal
+    st.title("🚀 AI Assessment Terminal")
+    c1, c2 = st.columns(2)
+    with c1: age = st.slider("Customer Age", 18, 95, 35)
+    with c2: balance = st.number_input("Yearly Balance ($)", 0, 1000000, 25000)
+    tenure = st.number_input("Tenure (Years)", 0, 50, 5)
 
-# --- 6. View Historical Data (Isolated) ---
-st.markdown("---")
-st.subheader("Your Recent Activity")
-try:
-    # RLS ensures only this user's data is returned
-    history = user_client.table("audit_logs").select("*").order("created_at", desc=True).limit(5).execute()
-    if history.data:
-        st.table(pd.DataFrame(history.data)[['customer_age', 'balance', 'decision', 'confidence']])
-    else:
-        st.info("No records found for your account.")
-except Exception as e:
-    st.warning("Could not load activity log.")
+    if st.button("Execute AI Analysis", use_container_width=True, type="primary"):
+        try:
+            feats = scaler.transform([[age, balance, tenure]])
+            pred = model.predict(feats)[0]
+            conf = round(np.max(model.predict_proba(feats)) * 100, 2)
+            decision = "ELIGIBLE" if pred == 1 else "NOT ELIGIBLE"
+
+            # Log to DB
+            supabase.table("audit_logs").insert({
+                "email": current_email, "customer_age": age, "balance": float(balance),
+                "tenure": tenure, "decision": decision, "confidence": conf
+            }).execute()
+            
+            st.session_state.last_result = {"decision": decision, "confidence": conf}
+            st.rerun()
+        except Exception as e:
+            st.error(f"System Error: {e}")
+
+    # Display Last Result
+    if st.session_state.last_result:
+        res = st.session_state.last_result
+        color = "#2ecc71" if res['decision'] == "ELIGIBLE" else "#e74c3c"
+        st.markdown(f"""<div style="background-color: {color}22; border: 2px solid {color}; padding: 20px; border-radius: 10px; text-align: center;">
+                    <h2 style="color: {color};">{res['decision']}</h2>
+                    <h4>Confidence: {res['confidence']}%</h4></div>""", unsafe_allow_html=True)
+
+    # Activity Log
+    st.markdown("---")
+    st.subheader("📜 Recent History")
+    if not user_logs.empty:
+        st.table(user_logs[["customer_age", "balance", "decision", "confidence"]].head(5))
+else:
+    st.error("System Failure: AI Assets Missing.")
