@@ -7,11 +7,28 @@ import datetime
 import plotly.express as px
 import pandas as pd
 
-# --- Configuration ---
-# Your Supabase credentials
+# --- Page Configuration ---
+st.set_page_config(
+    page_title="Bank-Marketing AI | Enterprise",
+    page_icon="🚀",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# --- Supabase Configuration ---
 URL = "https://ixwvplxnfndjbmdsvdpu.supabase.co"
 KEY = "sb_publishable_666yE2Qkv09Y5NQ_QlQaEg_L8fneOgL"
 supabase: Client = create_client(URL, KEY)
+
+# --- Custom CSS for Styling ---
+st.markdown("""
+    <style>
+    .main { background-color: #f8f9fa; }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .stButton>button { border-radius: 5px; height: 3em; font-weight: bold; }
+    .stTable { background-color: white; border-radius: 10px; }
+    </style>
+    """, unsafe_allow_html=True)
 
 # --- Session State ---
 if "authenticated" not in st.session_state:
@@ -21,150 +38,146 @@ if "current_user" not in st.session_state:
 if "last_result" not in st.session_state:
     st.session_state.last_result = None
 
-# --- Security Portal (Premium Key Check) ---
+# --- Auth Portal ---
 if not st.session_state.authenticated:
-    st.set_page_config(page_title="Enterprise AI Gateway", layout="centered")
-    st.title("🛡️ Enterprise AI Gateway")
-    st.markdown("---")
-    st.info("Access Restricted. Enter your $29/mo Premium License Key.")
-    
-    user_input = st.text_input("License Key", type="password", placeholder="PREMIUM-BANK-XXXX").strip()
-    
-    if st.button("Activate Terminal", use_container_width=True):
-        try:
-            # Checking license table in Supabase
-            res = supabase.table("licenses").select("*").eq("key_value", user_input).eq("is_active", True).execute()
-            if res.data:
-                st.session_state.authenticated = True
-                st.session_state.current_user = user_input
-                st.rerun()
-            else:
-                st.error("Authentication Failed: Invalid or Expired License.")
-        except Exception as e:
-            st.error(f"System Error: {e}")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.image("https://cdn-icons-png.flaticon.com/512/2830/2830284.png", width=100)
+        st.title("Enterprise AI Gateway")
+        st.subheader("Login to your Premium Account")
+        license_key = st.text_input("License Key", type="password", placeholder="PREMIUM-XXXX-2026")
+        
+        if st.button("Authorize Access", use_container_width=True):
+            try:
+                res = supabase.table("licenses").select("*").eq("key_value", license_key).eq("is_active", True).execute()
+                if res.data:
+                    st.session_state.authenticated = True
+                    st.session_state.current_user = license_key
+                    st.rerun()
+                else:
+                    st.error("Authentication failed. Invalid license.")
+            except Exception as e:
+                st.error("System connection error.")
     st.stop()
 
-# --- Helper: PDF Report Generator ---
-def create_pdf_report(age, balance, tenure, result, confidence):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(200, 10, "Banking AI Assessment Report", ln=True, align="C")
-    pdf.ln(10)
-    pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True)
-    pdf.cell(200, 10, f"Customer Age: {age}", ln=True)
-    pdf.cell(200, 10, f"Account Balance: ${balance:,}", ln=True)
-    pdf.cell(200, 10, f"Relationship Tenure: {tenure} years", ln=True)
-    pdf.ln(5)
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(200, 10, f"AI Decision: {result}", ln=True)
-    pdf.cell(200, 10, f"Model Confidence: {confidence:.2f}%", ln=True)
-    return pdf.output(dest="S").encode("latin-1")
-
+# --- Load Assets ---
 @st.cache_resource
-def load_ml_assets():
+def load_assets():
     try:
         with open("model.pkl", "rb") as f: model = pickle.load(f)
         with open("scaler.pkl", "rb") as f: scaler = pickle.load(f)
         return model, scaler
     except: return None, None
 
-# --- Main SaaS Dashboard ---
-model, scaler = load_ml_assets()
+model, scaler = load_assets()
 
-if model and scaler:
-    st.set_page_config(page_title="Banking AI Terminal", layout="wide")
-    st.title("🚀 Customer AI Assessment Terminal")
+# --- Sidebar UI ---
+with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/2830/2830284.png", width=50)
+    st.title("SaaS Control Panel")
+    st.caption(f"Active Key: {st.session_state.current_user[:10]}...")
+    st.markdown("---")
+    
+    # Quick Metrics in Sidebar
+    try:
+        logs_res = supabase.table("audit_logs").select("*").execute()
+        if logs_res.data:
+            df_sidebar = pd.DataFrame(logs_res.data)
+            st.metric("Total API Calls", len(df_sidebar))
+            eligible_pct = (len(df_sidebar[df_sidebar['decision'] == 'ELIGIBLE']) / len(df_sidebar)) * 100
+            st.metric("Approval Rate", f"{eligible_pct:.1f}%")
+    except: pass
 
-    # --- Sidebar ---
-    st.sidebar.success("Subscription: PREMIUM ACTIVE")
-    st.sidebar.info(f"User Key: {st.session_state.current_user}")
-    if st.sidebar.button("Logout", use_container_width=True):
+    if st.button("Logout", use_container_width=True):
         st.session_state.authenticated = False
         st.rerun()
 
-    # --- Input Fields ---
-    st.subheader("Customer Parameters")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        age = st.slider("Customer Age", 18, 95, 35)
-        balance = st.number_input("Yearly Balance ($)", 0, 1000000, 250000)
-    with col_b:
-        tenure = st.number_input("Relationship Tenure (Years)", 0, 50, 8)
-        st.info("System uses Neural Analysis for risk assessment.")
+# --- Main Dashboard ---
+st.title("🚀 Customer AI Assessment Terminal")
+st.markdown("Provide customer financial data to receive real-time eligibility scoring.")
 
-    # --- AI Analysis Execution ---
-    if st.button("Run AI Diagnostics", use_container_width=True):
-        # Processing inputs through ML pipeline
-        scaled_input = scaler.transform([[age, balance, tenure]])
-        pred_class = model.predict(scaled_input)[0]
-        prob_score = max(model.predict_proba(scaled_input)[0]) * 100
-        decision_label = "ELIGIBLE" if pred_class == 1 else "NOT ELIGIBLE"
-        
-        st.session_state.last_result = {
-            "age": age, "balance": balance, "tenure": tenure, 
-            "decision": decision_label, "confidence": prob_score
-        }
-        
-        # Logging entry to Supabase for audit
+# Input Layout
+with st.container():
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        age = st.number_input("Customer Age", 18, 95, 35)
+    with c2:
+        balance = st.number_input("Yearly Balance (USD)", 0, 1000000, 50000, step=1000)
+    with c3:
+        tenure = st.slider("Relationship Tenure (Years)", 0, 40, 5)
+
+if st.button("Execute Neural Analysis", use_container_width=True, type="primary"):
+    if model and scaler:
         try:
+            feats = scaler.transform([[age, balance, tenure]])
+            pred = model.predict(feats)[0]
+            conf = max(model.predict_proba(feats)[0]) * 100
+            decision = "ELIGIBLE" if pred == 1 else "NOT ELIGIBLE"
+            
+            st.session_state.last_result = {
+                "age": age, "balance": balance, "tenure": tenure,
+                "decision": decision, "confidence": conf
+            }
+            
+            # Log to DB
             supabase.table("audit_logs").insert({
                 "license_key": st.session_state.current_user,
-                "customer_age": age, 
-                "balance": float(balance),
-                "tenure": tenure, 
-                "decision": decision_label, 
-                "confidence": float(prob_score)
+                "customer_age": age, "balance": float(balance),
+                "tenure": tenure, "decision": decision, "confidence": float(conf)
             }).execute()
+            st.rerun()
         except Exception as e:
-            st.warning(f"Logging error: {e}")
-            
-        st.rerun()
+            st.error(f"Analysis error: {e}")
 
-    # --- Results & Visual Feedback ---
-    if st.session_state.last_result:
-        res = st.session_state.last_result
-        st.markdown("---")
-        res_col, pdf_col = st.columns([2, 1])
-        
-        with res_col:
-            color = "green" if res['decision'] == "ELIGIBLE" else "red"
-            st.markdown(f"### Assessment: :{color}[{res['decision']}]")
-            st.metric("Model Confidence", f"{res['confidence']:.2f}%")
-            st.progress(res['confidence'] / 100)
-            
-        with pdf_col:
-            st.write("📄 **Documentation**")
-            pdf_data = create_pdf_report(res['age'], res['balance'], res['tenure'], res['decision'], res['confidence'])
-            st.download_button("Download Official Report", pdf_data, "Report.pdf", "application/pdf", use_container_width=True)
-
-    # --- Color-Coded Activity Log (Last 5 Entries) ---
+# --- Results Section ---
+if st.session_state.last_result:
+    res = st.session_state.last_result
     st.markdown("---")
-    st.subheader("📜 Recent Activity Log")
     
-    try:
-        # Fetching records from audit_logs table
-        log_res = supabase.table("audit_logs").select("*").order("created_at", desc=True).limit(5).execute()
+    col_res, col_chart = st.columns([1, 1])
+    
+    with col_res:
+        st.subheader("Analysis Result")
+        color = "#2ecc71" if res['decision'] == "ELIGIBLE" else "#e74c3c"
+        st.markdown(f"""
+            <div style="padding:20px; border-radius:10px; border-left: 10px solid {color}; background-color:white;">
+                <h2 style="color:{color}; margin:0;">{res['decision']}</h2>
+                <p style="margin:0;">Confidence Score: <b>{res['confidence']:.2f}%</b></p>
+            </div>
+            """, unsafe_allow_html=True)
         
-        if log_res.data:
-            df_logs = pd.DataFrame(log_res.data)[['customer_age', 'balance', 'tenure', 'decision', 'confidence']]
-            df_logs.columns = ['Age', 'Balance ($)', 'Tenure (Y)', 'Decision', 'Confidence (%)']
+        # Download PDF
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", 'B', 16)
+        pdf.cell(200, 10, "Premium AI Assessment", ln=True, align='C')
+        pdf.set_font("Arial", size=12)
+        pdf.ln(10)
+        pdf.cell(200, 10, f"Customer Balance: ${res['balance']:,}", ln=True)
+        pdf.cell(200, 10, f"Decision: {res['decision']}", ln=True)
+        pdf_bytes = pdf.output(dest='S').encode('latin-1')
+        st.download_button("📥 Download Official PDF", pdf_bytes, "Assessment_Report.pdf", "application/pdf")
 
-            # CSS Color Mapping: Green for ELIGIBLE, Red for NOT ELIGIBLE
-            def apply_status_color(val):
-                color = '#2ecc71' if val == 'ELIGIBLE' else '#e74c3c'
-                return f'color: {color}; font-weight: bold'
+    with col_chart:
+        st.subheader("Risk Distribution")
+        fig = px.bar(x=["Confidence", "Risk"], y=[res['confidence'], 100-res['confidence']], 
+                     color=["Confidence", "Risk"], color_discrete_sequence=["#2ecc71", "#dfe6e9"])
+        fig.update_layout(height=250, margin=dict(t=0, b=0, l=0, r=0), showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
 
-            # Displaying the color-coded table
-            st.table(df_logs.style.applymap(apply_status_color, subset=['Decision']).format({
-                'Balance ($)': '{:,.0f}', 
-                'Confidence (%)': '{:.2f}'
-            }))
-        else:
-            st.info("No audit data found in database.")
-    except Exception as e:
-        st.error(f"Failed to load logs: {e}")
+# --- Historical Activity Table ---
+st.markdown("---")
+st.subheader("📜 Recent Global Activity")
+try:
+    log_res = supabase.table("audit_logs").select("*").order("created_at", desc=True).limit(5).execute()
+    if log_res.data:
+        df_logs = pd.DataFrame(log_res.data)[['customer_age', 'balance', 'decision', 'confidence']]
+        df_logs.columns = ['Age', 'Balance ($)', 'Decision', 'Confidence (%)']
+        
+        def color_decision(val):
+            color = '#27ae60' if val == 'ELIGIBLE' else '#c0392b'
+            return f'color: {color}; font-weight: bold'
 
-else:
-    st.error("Critical System Error: ML models (model.pkl / scaler.pkl) missing from repository.")
+        st.table(df_logs.style.applymap(color_decision, subset=['Decision']).format({'Balance ($)': '{:,.0f}', 'Confidence (%)': '{:.2f}'}))
+except:
+    st.info("No records found.")
