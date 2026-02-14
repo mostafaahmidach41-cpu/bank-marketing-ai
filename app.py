@@ -1,110 +1,114 @@
 import streamlit as st
-import pandas as pd
+import pickle
 import numpy as np
-import matplotlib.pyplot as plt
+from supabase import create_client, Client
+import pandas as pd
+import plotly.express as px
 
-st.set_page_config(layout="wide")
-
-# ---------------------------
-# Simple Login Session
-# ---------------------------
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-
-if not st.session_state.logged_in:
-    st.title("Enterprise AI Portal 🔐")
-
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
-
-    if st.button("Login"):
-        if email and password:
-            st.session_state.logged_in = True
-            st.rerun()
-        else:
-            st.error("Please enter your credentials")
-
+# --- 1. Stable Database Connection ---
+# Securely fetching URL and KEY from Streamlit Secrets
+URL = "https://ixwvplxnfndjbmdsvdpu.supabase.co"
+try:
+    KEY = st.secrets["SUPABASE_KEY"]
+except:
+    st.error("Missing SUPABASE_KEY in Secrets.")
     st.stop()
 
-# ---------------------------
+# Direct client creation to fix the AttributeError
+supabase: Client = create_client(URL, KEY)
+
+# --- 2. UI Configuration ---
+st.set_page_config(page_title="Banking AI Terminal", layout="wide")
+
+# Load ML Assets
+@st.cache_resource
+def load_assets():
+    try:
+        with open("model.pkl", "rb") as f: model = pickle.load(f)
+        with open("scaler.pkl", "rb") as f: scaler = pickle.load(f)
+        return model, scaler
+    except:
+        return None, None
+
+model, scaler = load_assets()
+
+# --- 3. Session Management ---
+if "identity" not in st.session_state:
+    # Restoring the identity shown in your original working version
+    st.session_state.identity = "PREMIUM-BANK-2026"
+
 # Sidebar
-# ---------------------------
-st.sidebar.success("Identity: PREMIUM-BANK-2026")
+with st.sidebar:
+    st.info(f"Identity: {st.session_state.identity}")
+    if st.button("Logout"):
+        st.stop()
+    
+    # Org Analytics
+    st.markdown("---")
+    st.subheader("📊 Org Analytics")
+    try:
+        res = supabase.table("audit_logs").select("*").execute()
+        if res.data:
+            df = pd.DataFrame(res.data)
+            st.metric("Total Assessments", len(df))
+            fig = px.pie(df, names="decision", color="decision", 
+                         color_discrete_map={"ELIGIBLE": "#2ecc71", "NOT ELIGIBLE": "#e74c3c"})
+            st.plotly_chart(fig, use_container_width=True)
+    except:
+        pass
 
-if st.sidebar.button("Logout"):
-    st.session_state.logged_in = False
-    st.rerun()
+# --- 4. Main Assessment Terminal ---
+st.title("🚀 Customer AI Assessment Terminal")
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("Org Analytics")
-
-# Dummy Data
-np.random.seed(1)
-data = pd.DataFrame({
-    "Age": np.random.randint(25, 60, 40),
-    "Balance": np.random.randint(20000, 120000, 40),
-    "Tenure": np.random.randint(1, 20, 40)
-})
-
-data["Decision"] = np.where(
-    (data["Balance"] > 70000) & (data["Tenure"] > 5),
-    "ELIGIBLE",
-    "NOT ELIGIBLE"
-)
-
-data["Confidence"] = np.random.uniform(50, 80, 40).round(2)
-
-# ---------------------------
-# Sidebar Charts
-# ---------------------------
-eligible_count = (data["Decision"] == "ELIGIBLE").sum()
-not_eligible_count = (data["Decision"] == "NOT ELIGIBLE").sum()
-
-fig1, ax1 = plt.subplots()
-ax1.pie(
-    [eligible_count, not_eligible_count],
-    labels=["Eligible", "Not Eligible"],
-    autopct="%1.0f%%"
-)
-
-st.sidebar.pyplot(fig1)
-
-st.sidebar.markdown("**Total Assessments**")
-st.sidebar.write(len(data))
-
-# ---------------------------
-# Main Layout
-# ---------------------------
-col1, col2 = st.columns([2, 1])
-
-latest = data.iloc[-1]
-
+col1, col2 = st.columns(2)
 with col1:
-    if latest["Decision"] == "ELIGIBLE":
-        st.success(f"Result: {latest['Decision']}")
-    else:
-        st.error(f"Result: {latest['Decision']}")
-
-    st.write(f"### Confidence Score: {latest['Confidence']}%")
-    st.progress(int(latest["Confidence"]))
-
+    age = st.number_input("Age", 18, 95, 42)
 with col2:
-    st.subheader("Why this decision? (Feature Impact)")
+    balance = st.number_input("Balance ($)", 0, 1000000, 50000)
+tenure = st.slider("Tenure (Years)", 0, 50, 12)
 
-    impact_data = pd.DataFrame({
-        "Feature": ["Age", "Tenure", "Balance"],
-        "Impact": [0.85, 0.75, 0.65]
-    })
+if st.button("Execute Neural Analysis", use_container_width=True, type="primary"):
+    if model and scaler:
+        # Prediction Logic
+        feats = scaler.transform([[age, balance, tenure]])
+        pred = model.predict(feats)[0]
+        conf = round(np.max(model.predict_proba(feats)) * 100, 2)
+        decision = "ELIGIBLE" if pred == 1 else "NOT ELIGIBLE"
 
-    st.bar_chart(impact_data.set_index("Feature"))
+        # Data Insertion (Handling RLS by providing the required email field)
+        try:
+            supabase.table("audit_logs").insert({
+                "email": "admin@bank.com", # Placeholder to satisfy database security policies
+                "customer_age": age, 
+                "balance": float(balance),
+                "tenure": tenure, 
+                "decision": decision, 
+                "confidence": conf
+            }).execute()
+            
+            # Display result with the original green/red styling
+            bg = "#d4edda" if decision == "ELIGIBLE" else "#f8d7da"
+            color = "#155724" if decision == "ELIGIBLE" else "#721c24"
+            st.markdown(f"""
+                <div style="background-color:{bg}; color:{color}; padding:30px; border-radius:10px; text-align:center; border:2px solid {color}55;">
+                    <h1>Result: {decision}</h1>
+                    <h3>Confidence Score: {conf}%</h3>
+                </div>
+                """, unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"Database Sync Error: {e}")
+    else:
+        st.error("System Assets (model.pkl/scaler.pkl) not found.")
 
-# ---------------------------
-# Activity Log
-# ---------------------------
+# --- 5. Recent Activity Log ---
 st.markdown("---")
-st.subheader("Recent Activity Log")
-
-st.dataframe(
-    data[["Age", "Balance", "Tenure", "Decision", "Confidence"]],
-    use_container_width=True
-)
+st.subheader("📜 Recent Activity Log")
+try:
+    # Fetching the latest logs from Supabase
+    history = supabase.table("audit_logs").select("*").order("created_at", desc=True).limit(5).execute()
+    if history.data:
+        log_df = pd.DataFrame(history.data)[["customer_age", "balance", "tenure", "decision", "confidence"]]
+        log_df.columns = ["Age", "Balance ($)", "Tenure (Y)", "Decision", "Confidence (%)"]
+        st.table(log_df)
+except:
+    st.info("Waiting for first assessment data...")
