@@ -6,118 +6,296 @@ from fpdf import FPDF
 import datetime
 import plotly.express as px
 import pandas as pd
+import os
 
-# --- Secure Configuration ---
-# Direct fetching from Secrets to ensure stability
+# --- Secure Configuration (Production Standard) ---
 URL = "https://ixwvplxnfndjbmdsvdpu.supabase.co"
-try:
-    KEY = st.secrets["SUPABASE_KEY"]
-except:
-    st.error("Missing SUPABASE_KEY in Secrets.")
+KEY = os.getenv("SUPABASE_KEY")
+
+if not KEY:
+    st.error("Missing SUPABASE_KEY. Please set it in Streamlit Secrets.")
     st.stop()
 
-# Reverted to stable direct connection to fix AttributeError
 supabase: Client = create_client(URL, KEY)
 
-# --- Session Management ---
-if "auth_user" not in st.session_state:
-    st.session_state.auth_user = None
+# --- Session state management ---
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+if "current_user" not in st.session_state:
+    st.session_state.current_user = ""
 if "last_result" not in st.session_state:
     st.session_state.last_result = None
 
-# --- Authentication Portal ---
-if not st.session_state.auth_user:
-    st.set_page_config(page_title="SaaS AI Login", layout="centered")
-    st.title("🔐 Enterprise AI Portal")
-    
-    tab1, tab2 = st.tabs(["Sign In", "Register"])
-    
-    with tab1:
-        email = st.text_input("Email")
-        pw = st.text_input("Password", type="password")
-        if st.button("Access System", use_container_width=True):
-            try:
-                # Direct Supabase Auth
-                res = supabase.auth.sign_in_with_password({"email": email, "password": pw})
-                st.session_state.auth_user = res.user
+# --- Security Portal ---
+if not st.session_state.authenticated:
+    st.set_page_config(page_title="Enterprise Security Portal", layout="centered")
+    st.title("Enterprise Security Portal")
+
+    user_input = st.text_input(
+        "Username or License Key",
+        type="password",
+        placeholder="Enter license key"
+    ).strip()
+
+    if st.button("Activate System", use_container_width=True):
+        try:
+            res = (
+                supabase
+                .table("licenses")
+                .select("*")
+                .eq("key_value", user_input)
+                .eq("is_active", True)
+                .execute()
+            )
+
+            if res.data and len(res.data) > 0:
+                st.session_state.authenticated = True
+                st.session_state.current_user = user_input
                 st.rerun()
-            except Exception:
-                st.error("Authentication failed.")
-    
-    with tab2:
-        new_email = st.text_input("Corporate Email")
-        new_pw = st.text_input("Create Password", type="password")
-        if st.button("Create Account", use_container_width=True):
-            try:
-                supabase.auth.sign_up({"email": new_email, "password": new_pw})
-                st.success("Account created! Check your email.")
-            except Exception as e:
-                st.error(f"Failed: {e}")
+            else:
+                st.error("Invalid or inactive license")
+
+        except Exception as e:
+            st.error(f"Authentication error: {e}")
+
     st.stop()
 
-# --- Assets & UI ---
+# --- Helper Functions ---
+def create_assessment_report(age, balance, tenure, result, confidence):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(200, 10, "Customer AI Assessment Report", ln=True, align="C")
+    pdf.ln(10)
+
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, f"Age: {age}", ln=True)
+    pdf.cell(200, 10, f"Balance: ${balance:,}", ln=True)
+    pdf.cell(200, 10, f"Tenure: {tenure} years", ln=True)
+    pdf.ln(5)
+
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(200, 10, f"Decision: {result}", ln=True)
+    pdf.cell(200, 10, f"Confidence: {confidence:.2f}%", ln=True)
+
+    pdf.ln(10)
+    pdf.set_font("Arial", "I", 8)
+    pdf.cell(
+        200,
+        10,
+        f"Generated on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        ln=True
+    )
+
+    return pdf.output(dest="S").encode("latin-1")
+
+
 @st.cache_resource
 def load_assets():
     try:
-        with open("model.pkl", "rb") as f: model = pickle.load(f)
-        with open("scaler.pkl", "rb") as f: scaler = pickle.load(f)
+        with open("model.pkl", "rb") as f:
+            model = pickle.load(f)
+        with open("scaler.pkl", "rb") as f:
+            scaler = pickle.load(f)
         return model, scaler
-    except: return None, None
+    except Exception:
+        return None, None
 
+
+# --- Main Application ---
 model, scaler = load_assets()
 
 if model and scaler:
-    st.set_page_config(page_title="Banking AI", layout="wide")
-    current_email = st.session_state.auth_user.email
-    
-    # Sidebar Info
-    st.sidebar.info(f"User: {current_email}")
-    if st.sidebar.button("Logout"):
-        supabase.auth.sign_out()
-        st.session_state.auth_user = None
+    st.set_page_config(page_title="AI Assessment Terminal", layout="wide")
+    st.title("Customer AI Assessment Terminal")
+
+    # --- Multi-tenant Analytics (Data Isolation) ---
+    st.sidebar.info(f"Identity: {st.session_state.current_user}")
+
+    if st.sidebar.button("Logout", use_container_width=True):
+        st.session_state.authenticated = False
         st.rerun()
 
-    # Manual Data Isolation (Safe & Proven)
-    response = supabase.table("audit_logs").select("*").eq("email", current_email).order("created_at", desc=True).execute()
-    user_logs = pd.DataFrame(response.data) if response.data else pd.DataFrame()
+    all_data_df = pd.DataFrame()
 
-    # Main Terminal
-    st.title("🚀 AI Assessment Terminal")
-    c1, c2 = st.columns(2)
-    with c1: age = st.slider("Customer Age", 18, 95, 35)
-    with c2: balance = st.number_input("Yearly Balance ($)", 0, 1000000, 25000)
-    tenure = st.number_input("Tenure (Years)", 0, 50, 5)
+    try:
+        response = (
+            supabase
+            .table("audit_logs")
+            .select("*")
+            .eq("license_key", st.session_state.current_user)
+            .order("created_at", desc=True)
+            .execute()
+        )
 
-    if st.button("Execute AI Analysis", use_container_width=True, type="primary"):
+        if response.data:
+            all_data_df = pd.DataFrame(response.data)
+
+            st.sidebar.markdown("---")
+            st.sidebar.subheader("Your Org Analytics")
+
+            fig_pie = px.pie(
+                all_data_df,
+                names="decision",
+                title="Eligibility Distribution",
+                color="decision",
+                color_discrete_map={
+                    "ELIGIBLE": "#2ecc71",
+                    "NOT ELIGIBLE": "#e74c3c"
+                }
+            )
+
+            fig_pie.update_layout(
+                showlegend=False,
+                height=200,
+                margin=dict(t=30, b=0, l=0, r=0)
+            )
+
+            st.sidebar.plotly_chart(fig_pie, use_container_width=True)
+            st.sidebar.metric("Your Total Checks", len(all_data_df))
+
+            csv_data = all_data_df.to_csv(index=False).encode("utf-8")
+
+            st.sidebar.download_button(
+                "Export My Logs (CSV)",
+                csv_data,
+                f"My_Logs_{datetime.date.today()}.csv",
+                "text/csv",
+                use_container_width=True
+            )
+
+    except Exception:
+        pass
+
+    # --- Input Section ---
+    col1, col2 = st.columns(2)
+
+    with col1:
+        age = st.slider("Customer Age", 18, 95, 35)
+        balance = st.number_input("Yearly Balance ($)", 0, 1_000_000, 25000)
+
+    with col2:
+        tenure = st.number_input("Relationship Tenure (Years)", 0, 50, 9)
+        st.info("System isolated for: " + st.session_state.current_user)
+
+    # --- Decision Engine ---
+    if st.button("Execute AI Analysis", use_container_width=True):
         try:
-            feats = scaler.transform([[age, balance, tenure]])
-            pred = model.predict(feats)[0]
-            conf = round(np.max(model.predict_proba(feats)) * 100, 2)
-            decision = "ELIGIBLE" if pred == 1 else "NOT ELIGIBLE"
+            features = np.array([[age, balance, tenure]])
+            scaled = scaler.transform(features)
 
-            # Log to DB
-            supabase.table("audit_logs").insert({
-                "email": current_email, "customer_age": age, "balance": float(balance),
-                "tenure": tenure, "decision": decision, "confidence": conf
-            }).execute()
-            
-            st.session_state.last_result = {"decision": decision, "confidence": conf}
+            prediction = model.predict(scaled)
+            probabilities = model.predict_proba(scaled)[0]
+
+            confidence = float(np.max(probabilities) * 100)
+            confidence = round(confidence, 2)
+
+            decision = "ELIGIBLE" if prediction[0] == 1 else "NOT ELIGIBLE"
+
+            try:
+                importances = model.feature_importances_
+            except AttributeError:
+                try:
+                    importances = np.abs(model.coef_[0])
+                except Exception:
+                    importances = np.array([0.33, 0.34, 0.33])
+
+            st.session_state.last_result = {
+                "age": age,
+                "balance": balance,
+                "tenure": tenure,
+                "decision": decision,
+                "confidence": confidence,
+                "importances": importances
+            }
+
+            audit_entry = {
+                "license_key": st.session_state.current_user,
+                "customer_age": age,
+                "balance": float(balance),
+                "tenure": tenure,
+                "decision": decision,
+                "confidence": confidence
+            }
+
+            supabase.table("audit_logs").insert(audit_entry).execute()
             st.rerun()
-        except Exception as e:
-            st.error(f"System Error: {e}")
 
-    # Display Last Result
+        except Exception as e:
+            st.error(f"Core Error: {e}")
+
+    # --- Results & Explainability ---
     if st.session_state.last_result:
         res = st.session_state.last_result
-        color = "#2ecc71" if res['decision'] == "ELIGIBLE" else "#e74c3c"
-        st.markdown(f"""<div style="background-color: {color}22; border: 2px solid {color}; padding: 20px; border-radius: 10px; text-align: center;">
-                    <h2 style="color: {color};">{res['decision']}</h2>
-                    <h4>Confidence: {res['confidence']}%</h4></div>""", unsafe_allow_html=True)
 
-    # Activity Log
+        st.markdown("---")
+
+        c1, c2 = st.columns([1, 1])
+
+        with c1:
+            if res["decision"] == "ELIGIBLE":
+                st.success(f"Final Decision: {res['decision']}")
+            else:
+                st.warning(f"Final Decision: {res['decision']}")
+
+            st.metric("Confidence Score", f"{res['confidence']}%")
+
+        with c2:
+            st.write("Feature Impact Analysis")
+
+            imp_df = pd.DataFrame({
+                "Feature": ["Age", "Balance", "Tenure"],
+                "Impact": res["importances"]
+            }).sort_values(by="Impact")
+
+            fig_imp = px.bar(
+                imp_df,
+                x="Impact",
+                y="Feature",
+                orientation="h",
+                color="Impact",
+                color_continuous_scale="Blues"
+            )
+
+            fig_imp.update_layout(
+                height=160,
+                margin=dict(t=0, b=0, l=0, r=0),
+                coloraxis_showscale=False
+            )
+
+            st.plotly_chart(fig_imp, use_container_width=True)
+
+    # --- Activity Log ---
     st.markdown("---")
-    st.subheader("📜 Recent History")
-    if not user_logs.empty:
-        st.table(user_logs[["customer_age", "balance", "decision", "confidence"]].head(5))
+    st.subheader("Recent Records")
+
+    if not all_data_df.empty:
+        st.dataframe(
+            all_data_df[
+                ["customer_age", "balance", "tenure", "decision", "confidence"]
+            ].head(5),
+            use_container_width=True
+        )
+
+    # --- PDF Reporting ---
+    if st.session_state.last_result:
+        res = st.session_state.last_result
+
+        pdf_data = create_assessment_report(
+            res["age"],
+            res["balance"],
+            res["tenure"],
+            res["decision"],
+            res["confidence"]
+        )
+
+        st.download_button(
+            "Download Secure PDF",
+            pdf_data,
+            f"Report_{st.session_state.current_user}.pdf",
+            "application/pdf",
+            use_container_width=True
+        )
+
 else:
-    st.error("System Failure: AI Assets Missing.")
+    st.error("System Failure: Assets Missing.")
