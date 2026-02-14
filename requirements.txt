@@ -1,7 +1,7 @@
 streamlit
-supabase
+supabase==2.3.0
 pandas
+plotly
 numpy
 scikit-learn
-fpdf
-plotly
+fpdf2
