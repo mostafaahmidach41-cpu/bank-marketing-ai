@@ -15,9 +15,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- Supabase Configuration ---
-URL = "https://ixwvplxnfndjbmdsvdpu.supabase.co"
-KEY = "sb_publishable_666yE2Qkv09Y5NQ_QlQaEg_L8fneOgL"
+# --- Secure Supabase Configuration ---
+# Keys are now pulled from Streamlit Secrets
+URL = st.secrets["SUPABASE_URL"]
+KEY = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(URL, KEY)
 
 # --- Custom CSS for Styling ---
@@ -30,7 +31,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- Session State ---
+# --- Session State Management ---
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "current_user" not in st.session_state:
@@ -49,18 +50,19 @@ if not st.session_state.authenticated:
         
         if st.button("Authorize Access", use_container_width=True):
             try:
+                # Validate key and ensure it is active
                 res = supabase.table("licenses").select("*").eq("key_value", license_key).eq("is_active", True).execute()
                 if res.data:
                     st.session_state.authenticated = True
                     st.session_state.current_user = license_key
                     st.rerun()
                 else:
-                    st.error("Authentication failed. Invalid license.")
+                    st.error("Authentication failed. Invalid or inactive license.")
             except Exception as e:
-                st.error("System connection error.")
+                st.error("System connection error. Please check your credentials.")
     st.stop()
 
-# --- Load Assets ---
+# --- Load ML Assets ---
 @st.cache_resource
 def load_assets():
     try:
@@ -71,21 +73,22 @@ def load_assets():
 
 model, scaler = load_assets()
 
-# --- Sidebar UI ---
+# --- Sidebar UI with Isolated Data ---
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/2830/2830284.png", width=50)
     st.title("SaaS Control Panel")
     st.caption(f"Active Key: {st.session_state.current_user[:10]}...")
     st.markdown("---")
     
-    # Quick Metrics in Sidebar
+    # Quick Metrics - Isolated to the current license key
     try:
-        logs_res = supabase.table("audit_logs").select("*").execute()
+        logs_res = supabase.table("audit_logs").select("*").eq("license_key", st.session_state.current_user).execute()
         if logs_res.data:
             df_sidebar = pd.DataFrame(logs_res.data)
-            st.metric("Total API Calls", len(df_sidebar))
-            eligible_pct = (len(df_sidebar[df_sidebar['decision'] == 'ELIGIBLE']) / len(df_sidebar)) * 100
-            st.metric("Approval Rate", f"{eligible_pct:.1f}%")
+            st.metric("Your Total API Calls", len(df_sidebar))
+            eligible_df = df_sidebar[df_sidebar['decision'] == 'ELIGIBLE']
+            eligible_pct = (len(eligible_df) / len(df_sidebar)) * 100
+            st.metric("Your Approval Rate", f"{eligible_pct:.1f}%")
     except: pass
 
     if st.button("Logout", use_container_width=True):
@@ -119,7 +122,7 @@ if st.button("Execute Neural Analysis", use_container_width=True, type="primary"
                 "decision": decision, "confidence": conf
             }
             
-            # Log to DB
+            # Log results into the database linked to the specific license key
             supabase.table("audit_logs").insert({
                 "license_key": st.session_state.current_user,
                 "customer_age": age, "balance": float(balance),
@@ -146,7 +149,7 @@ if st.session_state.last_result:
             </div>
             """, unsafe_allow_html=True)
         
-        # Download PDF
+        # Generate PDF Report
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", 'B', 16)
@@ -165,11 +168,18 @@ if st.session_state.last_result:
         fig.update_layout(height=250, margin=dict(t=0, b=0, l=0, r=0), showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
 
-# --- Historical Activity Table ---
+# --- Recent Activity Table (Isolated) ---
 st.markdown("---")
-st.subheader("📜 Recent Global Activity")
+st.subheader("📜 Your Recent Activity")
 try:
-    log_res = supabase.table("audit_logs").select("*").order("created_at", desc=True).limit(5).execute()
+    # Query is filtered by the user's license key for security
+    log_res = supabase.table("audit_logs")\
+        .select("*")\
+        .eq("license_key", st.session_state.current_user)\
+        .order("created_at", desc=True)\
+        .limit(5)\
+        .execute()
+        
     if log_res.data:
         df_logs = pd.DataFrame(log_res.data)[['customer_age', 'balance', 'decision', 'confidence']]
         df_logs.columns = ['Age', 'Balance ($)', 'Decision', 'Confidence (%)']
@@ -178,6 +188,11 @@ try:
             color = '#27ae60' if val == 'ELIGIBLE' else '#c0392b'
             return f'color: {color}; font-weight: bold'
 
-        st.table(df_logs.style.applymap(color_decision, subset=['Decision']).format({'Balance ($)': '{:,.0f}', 'Confidence (%)': '{:.2f}'}))
+        st.table(df_logs.style.applymap(color_decision, subset=['Decision']).format({
+            'Balance ($)': '{:,.0f}', 
+            'Confidence (%)': '{:.2f}'
+        }))
+    else:
+        st.info("No activity records found for this license.")
 except:
     st.info("No records found.")
