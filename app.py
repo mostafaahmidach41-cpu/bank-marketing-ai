@@ -28,9 +28,8 @@ if "license_key" not in st.session_state:
 if "last_result" not in st.session_state:
     st.session_state.last_result = None
 
-
 # --------------------------------------------------
-# AUTHENTICATION LAYER
+# AUTHENTICATION
 # --------------------------------------------------
 def authenticate_license(key):
     response = (
@@ -41,7 +40,6 @@ def authenticate_license(key):
         .execute()
     )
     return bool(response.data)
-
 
 if not st.session_state.authenticated:
     st.title("Enterprise Security Portal")
@@ -69,8 +67,54 @@ def load_model():
         scaler = pickle.load(f)
     return model, scaler
 
-
 model, scaler = load_model()
+
+# --------------------------------------------------
+# PDF REPORT GENERATOR (WITH LOGO)
+# --------------------------------------------------
+def generate_pdf_report(result, license_key):
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    # Add company logo
+    try:
+        pdf.image("logo.png", x=10, y=8, w=35)
+    except:
+        pass  # Avoid crash if logo not found
+
+    pdf.set_font("Arial", "B", 18)
+    pdf.cell(0, 15, "Customer AI Assessment Report", ln=True, align="C")
+    pdf.ln(10)
+
+    pdf.set_font("Arial", size=12)
+    pdf.cell(0, 8, f"License Key: {license_key}", ln=True)
+    pdf.cell(0, 8, f"Generated On: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True)
+    pdf.ln(8)
+
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(0, 8, "Customer Data", ln=True)
+    pdf.set_font("Arial", size=12)
+    pdf.cell(0, 8, f"Age: {result['age']}", ln=True)
+    pdf.cell(0, 8, f"Balance: ${result['balance']:,.0f}", ln=True)
+    pdf.cell(0, 8, f"Tenure: {result['tenure']} years", ln=True)
+    pdf.ln(8)
+
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(0, 8, "AI Decision", ln=True)
+    pdf.set_font("Arial", size=12)
+    pdf.cell(0, 8, f"Decision: {result['decision']}", ln=True)
+    pdf.cell(0, 8, f"Confidence: {result['confidence']:.2f}%", ln=True)
+
+    pdf.ln(10)
+    pdf.set_font("Arial", "I", 9)
+    pdf.multi_cell(
+        0,
+        6,
+        "This report was generated automatically by the Enterprise AI Assessment System."
+    )
+
+    return pdf.output(dest="S").encode("latin-1")
 
 # --------------------------------------------------
 # SIDEBAR
@@ -86,7 +130,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("Analytics Dashboard")
 
 # --------------------------------------------------
-# LOAD USER DATA (ISOLATED PER TENANT)
+# LOAD USER DATA
 # --------------------------------------------------
 @st.cache_data(ttl=60)
 def load_user_logs(license_key):
@@ -99,7 +143,6 @@ def load_user_logs(license_key):
     )
     return pd.DataFrame(response.data) if response.data else pd.DataFrame()
 
-
 logs_df = load_user_logs(st.session_state.license_key)
 
 if not logs_df.empty:
@@ -109,9 +152,7 @@ if not logs_df.empty:
         title="Eligibility Rate"
     )
     st.sidebar.plotly_chart(fig, use_container_width=True)
-
     st.sidebar.metric("Total Assessments", len(logs_df))
-
 
 # --------------------------------------------------
 # MAIN INPUT
@@ -141,7 +182,6 @@ if st.button("Generate AI Decision", use_container_width=True):
     confidence = float(max(probabilities) * 100)
     decision = "ELIGIBLE" if prediction == 1 else "NOT ELIGIBLE"
 
-    # Safe Feature Importance
     if hasattr(model, "feature_importances_"):
         importances = model.feature_importances_
     elif hasattr(model, "coef_"):
@@ -158,7 +198,6 @@ if st.button("Generate AI Decision", use_container_width=True):
         "importances": importances
     }
 
-    # Insert Secure Log
     supabase.table("audit_logs").insert({
         "license_key": st.session_state.license_key,
         "customer_age": age,
@@ -185,7 +224,6 @@ if st.session_state.last_result:
 
     st.progress(result["confidence"] / 100)
 
-    # Feature Impact Chart
     impact_df = pd.DataFrame({
         "Feature": ["Age", "Balance", "Tenure"],
         "Impact": result["importances"]
@@ -198,6 +236,17 @@ if st.session_state.last_result:
         orientation="h"
     )
     st.plotly_chart(fig_imp, use_container_width=True)
+
+    # Download PDF Button
+    pdf_bytes = generate_pdf_report(result, st.session_state.license_key)
+
+    st.download_button(
+        label="Download Official PDF Report",
+        data=pdf_bytes,
+        file_name=f"Assessment_{datetime.date.today()}.pdf",
+        mime="application/pdf",
+        use_container_width=True
+    )
 
 # --------------------------------------------------
 # RECENT ACTIVITY
