@@ -61,17 +61,22 @@ def load_assets():
 
 model, scaler = load_assets()
 
-# --- PDF Generation (With Logo Support) ---
+# --- PDF Generation (Logo Fix Applied) ---
 def generate_pdf_report(result, license_key):
     pdf = FPDF()
     pdf.add_page()
     
-    # Logo integration logic
-    logo_path = "logo.png"
+    # Matching your specific filename in GitHub: logo.png (2).png
+    logo_path = "logo.png (2).png" 
+    
     if os.path.exists(logo_path):
-        # Parameters: path, x, y, width
         pdf.image(logo_path, 10, 8, 33)
-        pdf.ln(20) # Spacer after logo
+        pdf.ln(20) 
+    else:
+        # Fallback to simple logo.png if you rename it later
+        if os.path.exists("logo.png"):
+            pdf.image("logo.png", 10, 8, 33)
+            pdf.ln(20)
     
     pdf.set_font("Arial", "B", 16)
     pdf.cell(0, 10, "Customer AI Assessment Report", ln=True, align="C")
@@ -83,7 +88,6 @@ def generate_pdf_report(result, license_key):
     pdf.cell(0, 10, f"Confidence: {result['confidence']:.2f}%", ln=True)
     pdf.cell(0, 10, f"Assessment Date: {datetime.datetime.now().strftime('%Y-%m-%d')}", ln=True)
     
-    # Ensuring byte conversion for Streamlit compatibility
     pdf_output = pdf.output()
     if isinstance(pdf_output, str):
         return pdf_output.encode('latin-1')
@@ -96,6 +100,7 @@ with st.sidebar:
     st.subheader("📊 Org Analytics")
     
     try:
+        # Fetching data for charts
         analytics_res = supabase.table("audit_logs").select("*").eq("license_key", st.session_state.license_key).execute()
         if analytics_res.data:
             df = pd.DataFrame(analytics_res.data)
@@ -143,6 +148,7 @@ if model and scaler:
         st.session_state.last_result = {"age": age, "balance": balance, "tenure": tenure, "decision": decision, "confidence": conf}
         
         try:
+            # Storing logs
             supabase.table("audit_logs").insert({
                 "license_key": st.session_state.license_key,
                 "customer_age": age,
