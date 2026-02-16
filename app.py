@@ -3,6 +3,7 @@ import pickle
 import numpy as np
 import pandas as pd
 import datetime
+import os
 from supabase import create_client, Client
 import plotly.express as px
 from fpdf import FPDF
@@ -12,7 +13,6 @@ st.set_page_config(page_title="Enterprise AI Terminal", layout="wide")
 
 # --- Database Connection ---
 try:
-    # Using Streamlit Secrets for secure connection
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -61,10 +61,18 @@ def load_assets():
 
 model, scaler = load_assets()
 
-# --- PDF Generation (Bytes-Safe Version) ---
+# --- PDF Generation (With Logo Support) ---
 def generate_pdf_report(result, license_key):
     pdf = FPDF()
     pdf.add_page()
+    
+    # Logo integration logic
+    logo_path = "logo.png"
+    if os.path.exists(logo_path):
+        # Parameters: path, x, y, width
+        pdf.image(logo_path, 10, 8, 33)
+        pdf.ln(20) # Spacer after logo
+    
     pdf.set_font("Arial", "B", 16)
     pdf.cell(0, 10, "Customer AI Assessment Report", ln=True, align="C")
     pdf.ln(10)
@@ -88,19 +96,16 @@ with st.sidebar:
     st.subheader("📊 Org Analytics")
     
     try:
-        # Fetch data for visualization
         analytics_res = supabase.table("audit_logs").select("*").eq("license_key", st.session_state.license_key).execute()
         if analytics_res.data:
             df = pd.DataFrame(analytics_res.data)
             
-            # Eligibility Distribution
             fig_pie = px.pie(df, names="decision", hole=0.4, 
                              color="decision", color_discrete_map={'ELIGIBLE':'#2ecc71', 'NOT ELIGIBLE':'#e74c3c'},
                              title="Eligibility Rate")
             fig_pie.update_layout(showlegend=False, margin=dict(t=30, b=0, l=0, r=0))
             st.plotly_chart(fig_pie, use_container_width=True)
             
-            # Average Balance Comparison
             avg_bal = df.groupby("decision")["balance"].mean().reset_index()
             fig_bar = px.bar(avg_bal, x="decision", y="balance", color="decision",
                              color_discrete_map={'ELIGIBLE':'#2ecc71', 'NOT ELIGIBLE':'#e74c3c'},
@@ -129,7 +134,6 @@ if model and scaler:
         tenure = st.number_input("Relationship Tenure (Years)", 0, 50, 10)
 
     if st.button("Execute Neural Analysis", use_container_width=True, type="primary"):
-        # Prediction
         features = np.array([[age, balance, tenure]])
         scaled_features = scaler.transform(features)
         pred = model.predict(scaled_features)[0]
@@ -138,7 +142,6 @@ if model and scaler:
         
         st.session_state.last_result = {"age": age, "balance": balance, "tenure": tenure, "decision": decision, "confidence": conf}
         
-        # Log to Database
         try:
             supabase.table("audit_logs").insert({
                 "license_key": st.session_state.license_key,
@@ -165,7 +168,6 @@ if st.session_state.last_result:
         </div>
     """, unsafe_allow_html=True)
     
-    # Download Button logic
     report_data = generate_pdf_report(res, st.session_state.license_key)
     st.download_button(
         label="📥 Download Official Assessment (PDF)",
@@ -181,7 +183,6 @@ st.subheader("📜 Recent Activity Log")
 try:
     recent_logs = supabase.table("audit_logs").select("*").eq("license_key", st.session_state.license_key).order("created_at", desc=True).limit(5).execute()
     if recent_logs.data:
-        # Columns must match database keys
         st.dataframe(pd.DataFrame(recent_logs.data)[["customer_age", "balance", "tenure", "decision", "confidence"]], use_container_width=True)
 except:
     st.info("Activity log currently empty.")
