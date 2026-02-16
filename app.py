@@ -13,11 +13,12 @@ st.set_page_config(page_title="Enterprise AI Terminal", layout="wide")
 
 # --- Database Connection ---
 try:
+    # Using Streamlit Secrets for secure Supabase initialization [cite: 1]
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception:
-    st.error("Connection Error: Check Streamlit Secrets.")
+    st.error("Connection Error: Please check your Streamlit Secrets for Supabase credentials.")
     st.stop()
 
 # --- Session State Management ---
@@ -43,7 +44,7 @@ if not st.session_state.authenticated:
             else:
                 st.error("Invalid or inactive license key.")
         except Exception as e:
-            st.error(f"Auth Error: {e}")
+            st.error(f"Authentication Error: {e}")
     st.stop()
 
 # --- AI Asset Loading ---
@@ -61,22 +62,21 @@ def load_assets():
 
 model, scaler = load_assets()
 
-# --- PDF Generation (Logo Fix Applied) ---
+# --- PDF Generation (Enhanced with Logo Detection) ---
 def generate_pdf_report(result, license_key):
     pdf = FPDF()
     pdf.add_page()
     
-    # Matching your specific filename in GitHub: logo.png (2).png
-    logo_path = "logo.png (2).png" 
+    # Check for specific filenames found in your GitHub repo 
+    possible_logos = ["logo.png (2).png", "logo.png.png", "logo.png"]
+    logo_found = False
     
-    if os.path.exists(logo_path):
-        pdf.image(logo_path, 10, 8, 33)
-        pdf.ln(20) 
-    else:
-        # Fallback to simple logo.png if you rename it later
-        if os.path.exists("logo.png"):
-            pdf.image("logo.png", 10, 8, 33)
+    for logo in possible_logos:
+        if os.path.exists(logo):
+            pdf.image(logo, 10, 8, 33)
             pdf.ln(20)
+            logo_found = True
+            break
     
     pdf.set_font("Arial", "B", 16)
     pdf.cell(0, 10, "Customer AI Assessment Report", ln=True, align="C")
@@ -88,39 +88,34 @@ def generate_pdf_report(result, license_key):
     pdf.cell(0, 10, f"Confidence: {result['confidence']:.2f}%", ln=True)
     pdf.cell(0, 10, f"Assessment Date: {datetime.datetime.now().strftime('%Y-%m-%d')}", ln=True)
     
+    # Fix for Streamlit download button compatibility [cite: 2]
     pdf_output = pdf.output()
     if isinstance(pdf_output, str):
         return pdf_output.encode('latin-1')
     return bytes(pdf_output)
 
-# --- Enhanced Sidebar Analytics ---
+# --- Sidebar Analytics Section ---
 with st.sidebar:
-    st.success(f"Identity: {st.session_state.license_key}")
+    st.success(f"Identity Verified: {st.session_state.license_key}")
     st.divider()
-    st.subheader("📊 Org Analytics")
+    st.subheader("📊 Performance Analytics")
     
     try:
-        # Fetching data for charts
+        # Fetching data for real-time visualization [cite: 4, 5]
         analytics_res = supabase.table("audit_logs").select("*").eq("license_key", st.session_state.license_key).execute()
         if analytics_res.data:
             df = pd.DataFrame(analytics_res.data)
             
+            # Eligibility Distribution [cite: 4]
             fig_pie = px.pie(df, names="decision", hole=0.4, 
                              color="decision", color_discrete_map={'ELIGIBLE':'#2ecc71', 'NOT ELIGIBLE':'#e74c3c'},
-                             title="Eligibility Rate")
+                             title="Eligibility Distribution")
             fig_pie.update_layout(showlegend=False, margin=dict(t=30, b=0, l=0, r=0))
             st.plotly_chart(fig_pie, use_container_width=True)
             
-            avg_bal = df.groupby("decision")["balance"].mean().reset_index()
-            fig_bar = px.bar(avg_bal, x="decision", y="balance", color="decision",
-                             color_discrete_map={'ELIGIBLE':'#2ecc71', 'NOT ELIGIBLE':'#e74c3c'},
-                             title="Avg Balance ($)")
-            fig_bar.update_layout(showlegend=False, margin=dict(t=30, b=0, l=0, r=0))
-            st.plotly_chart(fig_bar, use_container_width=True)
-            
             st.metric("Total Assessments", len(df))
     except:
-        st.info("Analytics data loading...")
+        st.info("Loading analytics...")
 
     st.divider()
     if st.button("Logout", use_container_width=True):
@@ -134,11 +129,11 @@ if model and scaler:
     col_a, col_b = st.columns(2)
     with col_a:
         age = st.slider("Customer Age", 18, 95, 35)
-        balance = st.number_input("Yearly Balance ($)", 0, 1_000_000, 50000)
+        balance = st.number_input("Yearly Balance ($)", 0, 1_000_000, 250000)
     with col_b:
-        tenure = st.number_input("Relationship Tenure (Years)", 0, 50, 10)
+        tenure = st.number_input("Relationship Tenure (Years)", 0, 50, 8)
 
-    if st.button("Execute Neural Analysis", use_container_width=True, type="primary"):
+    if st.button("Generate AI Decision", use_container_width=True, type="primary"):
         features = np.array([[age, balance, tenure]])
         scaled_features = scaler.transform(features)
         pred = model.predict(scaled_features)[0]
@@ -147,8 +142,8 @@ if model and scaler:
         
         st.session_state.last_result = {"age": age, "balance": balance, "tenure": tenure, "decision": decision, "confidence": conf}
         
+        # Logging Assessment to Database 
         try:
-            # Storing logs
             supabase.table("audit_logs").insert({
                 "license_key": st.session_state.license_key,
                 "customer_age": age,
@@ -157,8 +152,8 @@ if model and scaler:
                 "decision": decision,
                 "confidence": conf
             }).execute()
-        except:
-            pass
+        except Exception as e:
+            st.warning(f"Database logging failed: {e}")
         st.rerun()
 
 # --- Result Rendering ---
@@ -168,12 +163,12 @@ if st.session_state.last_result:
     
     res_color = "#2ecc71" if res["decision"] == "ELIGIBLE" else "#e74c3c"
     st.markdown(f"""
-        <div style="border: 2px solid {res_color}; padding:25px; border-radius:15px; text-align:center; background-color: rgba(0,0,0,0.05);">
-            <h2 style="color:{res_color}; margin:0;">Result: {res['decision']}</h2>
-            <h4 style="margin:5px 0;">Confidence Score: {res['confidence']:.2f}%</h4>
+        <div style="border: 2px solid {res_color}; padding:20px; border-radius:10px; text-align:center;">
+            <h2 style="color:{res_color}; margin:0;">Result: {res['decision']} | Confidence: {res['confidence']:.2f}%</h2>
         </div>
     """, unsafe_allow_html=True)
     
+    # PDF Download Button [cite: 2]
     report_data = generate_pdf_report(res, st.session_state.license_key)
     st.download_button(
         label="📥 Download Official Assessment (PDF)",
@@ -189,6 +184,7 @@ st.subheader("📜 Recent Activity Log")
 try:
     recent_logs = supabase.table("audit_logs").select("*").eq("license_key", st.session_state.license_key).order("created_at", desc=True).limit(5).execute()
     if recent_logs.data:
+        # Displaying specific assessment metrics [cite: 4]
         st.dataframe(pd.DataFrame(recent_logs.data)[["customer_age", "balance", "tenure", "decision", "confidence"]], use_container_width=True)
 except:
-    st.info("Activity log currently empty.")
+    st.info("No recent assessment logs found.")
