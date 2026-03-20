@@ -1,5 +1,5 @@
 import streamlit as st
-import joblib  # Using joblib for compressed models
+import joblib
 import numpy as np
 import pandas as pd
 import datetime
@@ -65,7 +65,7 @@ if not st.session_state.authenticated:
 @st.cache_resource
 def load_assets():
     try:
-        # Loading compressed files created with joblib in Colab
+        # Loading compressed files (2.98 MB model.pkl)
         model = joblib.load("model.pkl")
         scaler = joblib.load("scaler.pkl")
         return model, scaler
@@ -89,7 +89,7 @@ def get_decision_reasoning(age, balance, tenure, decision):
     
     return " | ".join(reasons) if reasons else "Standard neural evaluation complete."
 
-# --- PDF Report Generation ---
+# --- PDF Report Generation (Updated to fix TypeError) ---
 def generate_pdf_report(result, license_key):
     pdf = FPDF()
     pdf.add_page()
@@ -115,7 +115,8 @@ def generate_pdf_report(result, license_key):
     pdf.ln(10)
     pdf.cell(0, 10, f"Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True)
     
-    return bytes(pdf.output(dest='S'))
+    # Return output as bytes to fix the TypeError: dest='S' issue
+    return pdf.output()
 
 # --- Sidebar Dashboard ---
 with st.sidebar:
