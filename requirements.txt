@@ -1,5 +1,8 @@
 streamlit
 pandas
 numpy
-scikit-learn
 joblib
+supabase
+plotly
+fpdf
+scikit-learn
