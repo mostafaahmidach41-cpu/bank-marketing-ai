@@ -1,7 +1,8 @@
 streamlit
-supabase
 pandas
-plotly
 numpy
+joblib
+supabase
+plotly
+fpdf
 scikit-learn
-fpdf2
