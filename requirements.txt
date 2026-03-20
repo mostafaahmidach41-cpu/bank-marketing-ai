@@ -5,4 +5,4 @@ joblib
 supabase
 plotly
 fpdf
-scikit-learn
+scikit-learn==1.2.2
