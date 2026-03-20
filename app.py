@@ -9,25 +9,26 @@ import plotly.express as px
 from fpdf import FPDF
 
 # --- Page Configuration ---
-st.set_page_config(page_title="Enterprise AI Terminal", layout="wide", page_icon="🚀")
+st.set_page_config(page_title="VisionPro AI | Terminal", layout="wide", page_icon="🚀")
 
 # --- Custom CSS for Modern UI ---
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .reasoning-box { padding: 15px; border-radius: 8px; margin-top: 10px; font-size: 0.9em; line-height: 1.4; }
+    .stMetric { background-color: #ffffff; padding: 20px; border-radius: 15px; border: 1px solid #eee; }
+    .stButton>button { border-radius: 50px; font-weight: bold; transition: 0.3s; }
+    .reasoning-box { background-color: white; border-left: 5px solid #2ecc71; padding: 15px; border-radius: 8px; color: #333; }
+    div[data-testid="stSidebar"] { background-color: #2c3e50; color: white; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- Database Connection ---
+# --- Database Connection (Supabase) ---
 try:
-    # Using Streamlit Secrets for secure Supabase initialization
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception:
-    st.error("Connection Error: Please check your Streamlit Secrets for Supabase credentials.")
+    st.error("Connection Error: Please check Supabase credentials in Streamlit Secrets.")
     st.stop()
 
 # --- Session State Management ---
@@ -35,24 +36,24 @@ if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "last_result" not in st.session_state:
     st.session_state.last_result = None
-if "license_key" not in st.session_state:
-    st.session_state.license_key = None
 
 # --- Authentication Portal ---
 if not st.session_state.authenticated:
     st.title("🛡️ Enterprise Security Portal")
-    license_input = st.text_input("Enter License Key", placeholder="PREMIUM-BANK-2026")
+    st.markdown("Please enter your professional license key to activate system access.")
     
-    if st.button("Activate System", use_container_width=True, type="primary"):
+    license_input = st.text_input("License Key", placeholder="PREMIUM-BANK-2026", type="password")
+    
+    if st.button("Activate System Now", use_container_width=True, type="primary"):
         try:
-            # Verifying license against Supabase records
             res = supabase.table("licenses").select("key_value").eq("key_value", license_input).eq("is_active", True).execute()
             if res.data:
                 st.session_state.authenticated = True
                 st.session_state.license_key = license_input
+                st.success("Authenticated successfully! Loading AI Engine...")
                 st.rerun()
             else:
-                st.error("Invalid or inactive license key.")
+                st.error("Invalid or expired license key.")
         except Exception as e:
             st.error(f"Authentication Error: {e}")
     st.stop()
@@ -61,14 +62,13 @@ if not st.session_state.authenticated:
 @st.cache_resource
 def load_assets():
     try:
-        # Loading model.pkl and scaler.pkl from the repository
         with open("model.pkl", "rb") as f:
             model = pickle.load(f)
         with open("scaler.pkl", "rb") as f:
             scaler = pickle.load(f)
         return model, scaler
     except Exception as e:
-        st.error(f"Asset Error: {e}")
+        st.error(f"Asset Loading Error: {e}")
         return None, None
 
 model, scaler = load_assets()
@@ -77,103 +77,96 @@ model, scaler = load_assets()
 def get_decision_reasoning(age, balance, tenure, decision):
     reasons = []
     if decision == "ELIGIBLE":
-        if balance > 150000: reasons.append("Significant capital liquidity detected.")
-        if tenure > 5: reasons.append("Established long-term relationship history.")
-        if 25 <= age <= 60: reasons.append("Client falls within optimal demographic bracket.")
+        if balance > 150000: reasons.append("Strong liquidity detected supporting eligibility.")
+        if tenure > 5: reasons.append("Established long-term relationship enhances trust score.")
+        if 25 <= age <= 60: reasons.append("Client falls within optimal stable demographic range.")
     else:
-        if balance < 100000: reasons.append("Account balance is below the premium requirement.")
-        if tenure < 3: reasons.append("Relationship duration does not meet maturity threshold.")
-        if age < 21: reasons.append("Applicant age is below minimum regulatory requirements.")
+        if balance < 100000: reasons.append("Current balance is below minimum premium threshold.")
+        if tenure < 3: reasons.append("Relationship duration does not meet maturity requirements.")
+        if age < 21: reasons.append("Age is below standard regulatory requirements.")
     
-    return " ".join(reasons) if reasons else "Profile meets standard evaluation parameters."
+    return " | ".join(reasons) if reasons else "Profile meets standard evaluation parameters."
 
-# --- PDF Generation (Enhanced with Reasoning) ---
+# --- Professional PDF Report Generation ---
 def generate_pdf_report(result, license_key):
     pdf = FPDF()
     pdf.add_page()
     
-    # Logo detection based on files in repository
-    possible_logos = ["logo.png (2).png", "logo.png.png", "logo.png"]
-    for logo in possible_logos:
+    # Logo detection
+    for logo in ["logo.png", "logo.png.png"]:
         if os.path.exists(logo):
             pdf.image(logo, 10, 8, 33)
             pdf.ln(20)
             break
     
     pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, "Customer AI Assessment Report", ln=True, align="C")
+    pdf.cell(0, 10, "AI Customer Assessment Report", ln=True, align="C")
     pdf.ln(10)
     
     pdf.set_font("Arial", size=12)
     pdf.cell(0, 10, f"License ID: {license_key}", ln=True)
     pdf.cell(0, 10, f"AI Decision: {result['decision']}", ln=True)
     pdf.cell(0, 10, f"Confidence Score: {result['confidence']:.2f}%", ln=True)
+    pdf.ln(5)
     
-    # Safe handling of reasoning for PDF
-    reasoning = result.get('reasoning', "Standard assessment performed.")
-    pdf.multi_cell(0, 10, f"AI Reasoning: {reasoning}")
-    
-    pdf.cell(0, 10, f"Assessment Date: {datetime.datetime.now().strftime('%Y-%m-%d')}", ln=True)
+    pdf.multi_cell(0, 10, f"AI Reasoning: {result.get('reasoning', 'Standard Assessment performed.')}")
+    pdf.ln(10)
+    pdf.cell(0, 10, f"Issued Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True)
     
     return bytes(pdf.output(dest='S'))
 
-# --- Sidebar Analytics Section ---
+# --- Sidebar (Dashboard) ---
 with st.sidebar:
-    st.info(f"Session Active: {st.session_state.license_key}")
+    st.title("📊 VisionPro Dashboard")
+    st.write(f"Active User: **{st.session_state.license_key}**")
     st.divider()
-    st.subheader("Performance Analytics")
     
     try:
-        # Fetching audit logs from Supabase for real-time charts
-        analytics_res = supabase.table("audit_logs").select("*").eq("license_key", st.session_state.license_key).execute()
-        if analytics_res.data:
-            df = pd.DataFrame(analytics_res.data)
-            fig_pie = px.pie(df, names="decision", hole=0.5, 
-                             color="decision", color_discrete_map={'ELIGIBLE':'#2ecc71', 'NOT ELIGIBLE':'#e74c3c'})
-            fig_pie.update_layout(showlegend=False, margin=dict(t=0, b=0, l=0, r=0))
-            st.plotly_chart(fig_pie, use_container_width=True)
+        # Live Analytics from Supabase
+        analytics = supabase.table("audit_logs").select("*").eq("license_key", st.session_state.license_key).execute()
+        if analytics.data:
+            df = pd.DataFrame(analytics.data)
             st.metric("Total Assessments", len(df))
+            fig = px.pie(df, names="decision", hole=0.6, color="decision",
+                         color_discrete_map={'ELIGIBLE':'#2ecc71', 'NOT ELIGIBLE':'#e74c3c'})
+            fig.update_layout(margin=dict(t=0, b=0, l=0, r=0), paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
     except:
-        st.info("Synchronizing data...")
+        st.info("Synchronizing cloud data...")
 
-    st.divider()
     if st.button("Logout System", use_container_width=True):
         st.session_state.authenticated = False
         st.rerun()
 
 # --- Main Assessment Engine ---
 st.title("🚀 Customer AI Assessment Terminal")
-st.markdown("Automated risk analysis and eligibility verification powered by VisionPro AI.")
+st.markdown("Automated risk analysis and eligibility verification powered by VisionPro Neural Engine.")
 
 if model and scaler:
     with st.container():
-        col_a, col_b, col_c = st.columns([1, 1, 1])
-        with col_a:
-            age = st.slider("Customer Age", 18, 95, 45)
-        with col_b:
-            balance = st.number_input("Yearly Balance ($)", 0, 1000000, 250000)
-        with col_c:
-            tenure = st.number_input("Tenure (Years)", 0, 50, 10)
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            age = st.slider("Customer Age", 18, 95, 40)
+        with col2:
+            balance = st.number_input("Yearly Balance ($)", 0, 1000000, 150000)
+        with col3:
+            tenure = st.number_input("Tenure (Years)", 0, 50, 5)
 
-    if st.button("Run AI Diagnostic", use_container_width=True, type="primary"):
+    if st.button("Run Smart Diagnostic", use_container_width=True, type="primary"):
         features = np.array([[age, balance, tenure]])
-        scaled_features = scaler.transform(features)
+        scaled = scaler.transform(features)
         
-        # Prediction and confidence calculation
-        pred = model.predict(scaled_features)[0]
-        conf = float(max(model.predict_proba(scaled_features)[0]) * 100)
+        pred = model.predict(scaled)[0]
+        conf = float(max(model.predict_proba(scaled)[0]) * 100)
         decision = "ELIGIBLE" if pred == 1 else "NOT ELIGIBLE"
-        
-        # Generate Reasoning
         reasoning = get_decision_reasoning(age, balance, tenure, decision)
         
-        # Updating session state with all keys present
         st.session_state.last_result = {
             "age": age, "balance": balance, "tenure": tenure, 
             "decision": decision, "confidence": conf, "reasoning": reasoning
         }
         
-        # Logging to Supabase audit_logs table
+        # Log to Supabase
         try:
             supabase.table("audit_logs").insert({
                 "license_key": st.session_state.license_key,
@@ -183,51 +176,35 @@ if model and scaler:
                 "decision": decision,
                 "confidence": conf
             }).execute()
-        except Exception as e:
-            st.warning(f"Log Sync Failed: {e}")
+        except:
+            pass
         st.rerun()
 
 # --- Result Rendering ---
 if st.session_state.last_result:
     res = st.session_state.last_result
+    color = "#2ecc71" if res["decision"] == "ELIGIBLE" else "#e74c3c"
+    
     st.divider()
-    
-    res_color = "#2ecc71" if res["decision"] == "ELIGIBLE" else "#e74c3c"
-    bg_alpha = "rgba(46, 204, 113, 0.1)" if res["decision"] == "ELIGIBLE" else "rgba(231, 76, 60, 0.1)"
-    
-    # Securely retrieve reasoning to avoid KeyError
-    reasoning_output = res.get('reasoning', "Assessment finalized based on neural patterns.")
-    
     st.markdown(f"""
-        <div style="border: 2px solid {res_color}; background-color: {bg_alpha}; padding:25px; border-radius:12px; text-align:center;">
-            <h1 style="color:{res_color}; margin:0;">{res['decision']}</h1>
-            <h3 style="color:#444;">Confidence: {res['confidence']:.2f}%</h3>
-            <div style="background-color: white; border-left: 5px solid {res_color}; text-align: left; padding: 15px; margin-top: 15px; border-radius: 8px; color: #333;">
-                <strong>AI Reasoning:</strong><br>{reasoning_output}
+        <div style="border: 2px solid {color}; padding:30px; border-radius:15px; background:white; text-align:center;">
+            <h1 style="color:{color}; margin:0;">{res['decision']}</h1>
+            <p style="font-size:1.2em; color:#666;">Confidence Level: {res['confidence']:.2f}%</p>
+            <div style="text-align:left; border-left:5px solid {color}; padding:15px; background:#f9f9f9; color:#333;">
+                <strong>AI Analytical Reasoning:</strong><br>{res['reasoning']}
             </div>
         </div>
     """, unsafe_allow_html=True)
     
-    st.write("") # Spacer
-    
-    # PDF download integration
-    report_bytes = generate_pdf_report(res, st.session_state.license_key)
+    # Download Report
+    report = generate_pdf_report(res, st.session_state.license_key)
     st.download_button(
         label="📥 Download Official Assessment (PDF)",
-        data=report_bytes,
+        data=report,
         file_name=f"AI_Report_{res['decision']}.pdf",
         mime="application/pdf",
         use_container_width=True
     )
 
-# --- Activity Log Table ---
 st.divider()
-st.subheader("📜 System Activity Log")
-try:
-    # Retrieving recent activity
-    recent_logs = supabase.table("audit_logs").select("*").eq("license_key", st.session_state.license_key).order("created_at", desc=True).limit(5).execute()
-    if recent_logs.data:
-        log_df = pd.DataFrame(recent_logs.data)[["customer_age", "balance", "tenure", "decision", "confidence"]]
-        st.dataframe(log_df, use_container_width=True)
-except:
-    st.info("Awaiting new diagnostic data.")
+st.caption("VisionPro AI © 2026 | Enterprise Security Protocol Enabled")
